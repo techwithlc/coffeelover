@@ -1,93 +1,53 @@
-import { useEffect, useState } from 'react';
-import { Heart } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import type { Database } from '../lib/database.types';
+import React from 'react';
+import { CoffeeShop } from '../lib/types';
 
-type Location = Database['public']['Tables']['locations']['Row'];
-
-interface Props {
-  onLocationSelect: (location: Location) => void;
+// Define the props for the Sidebar component
+interface SidebarProps {
+  locations: CoffeeShop[];
+  onSelectLocation: (location: CoffeeShop) => void;
 }
 
-export default function Sidebar({ onLocationSelect }: Props) {
-  const [favorites, setFavorites] = useState<Location[]>([]);
-
-  useEffect(() => {
-    const fetchFavorites = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('favorites')
-        .select(`
-          location_id,
-          locations (*)
-        `)
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Error fetching favorites:', error);
-        return;
-      }
-
-      // Let Supabase infer types, filter out entries where the joined location is missing
-      const validFavorites = data
-        ?.filter(f => f.locations) // Ensure the joined 'locations' object exists and data is not null
-        .map(f => f.locations as unknown as Location); // Cast via unknown first
-
-      setFavorites(validFavorites || []); // Ensure we set an array even if data is null/undefined initially
-    };
-
-    fetchFavorites();
-
-    // Subscribe to favorites changes
-    const subscription = supabase
-      .channel('favorites')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'favorites' }, () => {
-        fetchFavorites();
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
+const Sidebar: React.FC<SidebarProps> = ({ locations, onSelectLocation }) => {
   return (
-    // Sidebar container
-    <div className="w-72 bg-gray-50 h-screen p-4 overflow-y-auto border-r border-gray-200 flex flex-col">
-      {/* Header */}
-      <div className="mb-6 pb-3 border-b border-gray-200">
-        <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
-          <Heart className="text-red-500" size={20} />
-          Favorite Locations
-        </h2>
+    <div className="w-80 border-r bg-background p-4 flex flex-col h-full">
+      <h2 className="text-lg font-semibold mb-4">Coffee Shops</h2>
+      <div className="flex-grow overflow-y-auto">
+        {locations.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Loading coffee shops...</p>
+        ) : (
+          locations.map((location) => (
+            <React.Fragment key={location.id}>
+              <div
+                className="p-2 hover:bg-gray-100 rounded cursor-pointer"
+                onClick={() => onSelectLocation(location)}
+              >
+                <h3 className="font-medium">{location.name || 'Unnamed Shop'}</h3>
+                {location.address && (
+                  <p className="text-sm text-gray-500">{location.address}</p>
+                )}
+                {location.rating && (
+                  <div className="flex items-center mt-1">
+                    <span className="text-sm text-yellow-500">★</span>
+                    <span className="text-sm ml-1">{location.rating.toFixed(1)}</span>
+                  </div>
+                )}
+              </div>
+              <div className="my-1 border-b border-gray-200"></div>
+            </React.Fragment>
+          ))
+        )}
       </div>
-
-      {/* Favorites List */}
-      {favorites.length > 0 ? (
-        <div className="space-y-2 flex-1">
-          {favorites.map((location) => (
-            <button
-              key={location.id}
-              onClick={() => onLocationSelect(location)}
-              className="w-full text-left p-3 hover:bg-indigo-100 rounded-lg transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
-            >
-              <h3 className="font-medium text-gray-800 truncate">{location.name || 'Unnamed Location'}</h3>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Lat: {location.lat.toFixed(4)}, Lng: {location.lng.toFixed(4)}
-              </p>
-            </button>
-          ))}
-        </div>
-      ) : (
-        // Empty State
-        <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-500">
-           <Heart size={32} className="mb-3 text-gray-400" />
-           <p className="text-sm">No favorite locations yet.</p>
-           <p className="text-xs mt-1">Click the heart icon on a location's details to add it here.</p>
-        </div>
-      )}
+      {/* Add search/filter input here later */}
+      <div className="mt-4">
+        <input
+          type="text"
+          placeholder="Search or prompt..."
+          className="w-full p-2 border rounded"
+          // Add state and onChange handler for search/prompt later
+        />
+      </div>
     </div>
   );
-}
+};
+
+export default Sidebar;

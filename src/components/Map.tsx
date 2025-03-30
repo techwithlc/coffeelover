@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GoogleMap, useLoadScript, MarkerClusterer, Marker } from '@react-google-maps/api';
-import { MapPin } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import type { Database } from '../lib/database.types';
+import { CoffeeShop } from '../lib/types';
 
 const mapOptions = {
   disableDefaultUI: true,
@@ -16,100 +14,50 @@ const mapOptions = {
   ],
 };
 
-type Location = Database['public']['Tables']['locations']['Row'];
+interface MapProps {
+  locations: CoffeeShop[];
+  onMarkerClick: (location: CoffeeShop) => void;
+}
 
-export default function Map() {
+export default function Map({ locations, onMarkerClick }: MapProps) {
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   });
 
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [center, setCenter] = useState({ lat: 24.1477, lng: 120.6736 });
 
   useEffect(() => {
-    const fetchLocations = async () => {
-      const { data, error } = await supabase
-        .from('locations')
-        .select('*');
-      
-      if (error) {
-        console.error('Error fetching locations:', error);
-        return;
-      }
-
-      setLocations(data);
-    };
-
-    fetchLocations();
-
-    // Subscribe to real-time updates
-    const subscription = supabase
-      .channel('locations')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'locations' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setLocations((prev) => [...prev, payload.new as Location]);
-        } else if (payload.eventType === 'DELETE') {
-          setLocations((prev) => prev.filter((loc) => loc.id !== payload.old.id));
-        }
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const handleMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
-    if (!e.latLng) return;
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert('Please sign in to add locations');
-      return;
+    if (locations.length > 0 && locations[0].lat && locations[0].lng) {
+      setCenter({ lat: locations[0].lat, lng: locations[0].lng });
     }
+  }, [locations]);
 
-    const name = prompt('Enter location name:');
-    if (!name) return;
-
-    const { error } = await supabase
-      .from('locations')
-      .insert({
-        lat: e.latLng.lat(),
-        lng: e.latLng.lng(),
-        name,
-        user_id: user.id,
-      });
-
-    if (error) {
-      console.error('Error adding location:', error);
-    }
-  }, []);
-
-  if (!isLoaded) return <div>Loading...</div>;
+  if (!isLoaded) return <div className="w-full h-full flex items-center justify-center">Loading Maps...</div>;
 
   return (
     <GoogleMap
-      zoom={12}
-      center={{ lat: 40.7128, lng: -74.0060 }}
+      zoom={13}
+      center={center}
       mapContainerClassName="w-full h-full"
       options={mapOptions}
-      onClick={handleMapClick}
     >
       <MarkerClusterer>
         {(clusterer) => (
           <>
             {locations.map((location) => (
-              <Marker
-                key={location.id}
-                position={{ lat: location.lat, lng: location.lng }}
-                clusterer={clusterer}
-                icon={{
-                  url: `data:image/svg+xml,${encodeURIComponent(
-                    MapPin({ color: '#ef4444', size: 32 }).outerHTML
-                  )}`,
-                }}
-                onClick={() => setSelectedLocation(location)}
-              />
+              location.lat && location.lng ? (
+                <Marker
+                  key={location.id}
+                  position={{ lat: location.lat, lng: location.lng }}
+                  clusterer={clusterer}
+                  icon={{
+                    url: `data:image/svg+xml,${encodeURIComponent(
+                      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#8B4513" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/></svg>`
+                    )}`,
+                  }}
+                  onClick={() => onMarkerClick(location)}
+                />
+              ) : null
             ))}
           </>
         )}
