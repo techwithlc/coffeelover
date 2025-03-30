@@ -17,9 +17,10 @@ const mapOptions = {
 interface MapProps {
   locations: CoffeeShop[];
   onMarkerClick: (location: CoffeeShop) => void;
+  favoriteIds: Set<string>; // Add favoriteIds prop
 }
 
-export default function Map({ locations, onMarkerClick }: MapProps) {
+export default function Map({ locations, onMarkerClick, favoriteIds }: MapProps) {
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   });
@@ -52,7 +53,7 @@ export default function Map({ locations, onMarkerClick }: MapProps) {
                   clusterer={clusterer}
                   icon={{
                     url: `data:image/svg+xml,${encodeURIComponent(
-                      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="#8B4513" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/></svg>`
+                      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${favoriteIds.has(location.id) ? '#DC2626' : '#8B4513'}" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/></svg>`
                     )}`,
                   }}
                   onClick={() => onMarkerClick(location)}
