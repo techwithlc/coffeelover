@@ -30,7 +30,12 @@ export default function Sidebar({ onLocationSelect }: Props) {
         return;
       }
 
-      setFavorites(data.map((f: any) => f.locations));
+      // Let Supabase infer types, filter out entries where the joined location is missing
+      const validFavorites = data
+        ?.filter(f => f.locations) // Ensure the joined 'locations' object exists and data is not null
+        .map(f => f.locations as unknown as Location); // Cast via unknown first
+
+      setFavorites(validFavorites || []); // Ensure we set an array even if data is null/undefined initially
     };
 
     fetchFavorites();
@@ -49,26 +54,40 @@ export default function Sidebar({ onLocationSelect }: Props) {
   }, []);
 
   return (
-    <div className="w-64 bg-white h-full p-4 overflow-y-auto">
-      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-        <Heart className="text-red-500" />
-        Favorites
-      </h2>
-      
-      <div className="space-y-2">
-        {favorites.map((location) => (
-          <button
-            key={location.id}
-            onClick={() => onLocationSelect(location)}
-            className="w-full text-left p-2 hover:bg-gray-100 rounded-md transition-colors"
-          >
-            <h3 className="font-medium">{location.name}</h3>
-            <p className="text-sm text-gray-500">
-              {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-            </p>
-          </button>
-        ))}
+    // Sidebar container
+    <div className="w-72 bg-gray-50 h-screen p-4 overflow-y-auto border-r border-gray-200 flex flex-col">
+      {/* Header */}
+      <div className="mb-6 pb-3 border-b border-gray-200">
+        <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+          <Heart className="text-red-500" size={20} />
+          Favorite Locations
+        </h2>
       </div>
+
+      {/* Favorites List */}
+      {favorites.length > 0 ? (
+        <div className="space-y-2 flex-1">
+          {favorites.map((location) => (
+            <button
+              key={location.id}
+              onClick={() => onLocationSelect(location)}
+              className="w-full text-left p-3 hover:bg-indigo-100 rounded-lg transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1"
+            >
+              <h3 className="font-medium text-gray-800 truncate">{location.name || 'Unnamed Location'}</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Lat: {location.lat.toFixed(4)}, Lng: {location.lng.toFixed(4)}
+              </p>
+            </button>
+          ))}
+        </div>
+      ) : (
+        // Empty State
+        <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-500">
+           <Heart size={32} className="mb-3 text-gray-400" />
+           <p className="text-sm">No favorite locations yet.</p>
+           <p className="text-xs mt-1">Click the heart icon on a location's details to add it here.</p>
+        </div>
+      )}
     </div>
   );
 }
