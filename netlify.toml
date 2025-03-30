@@ -1,0 +1,15 @@
+# Netlify build configuration for a Vite project
+
+[build]
+  command = "npm run build"  # The command to build your site
+  publish = "dist"           # The directory containing the built site files
+
+[build.environment]
+  NODE_VERSION = "18"        # Specify a Node.js version (optional, but recommended)
+
+# Optional: Redirects and headers can be configured here too
+# Example: Redirect all paths to index.html for single-page apps
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
