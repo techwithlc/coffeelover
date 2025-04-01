@@ -1,13 +1,25 @@
 import { useState, useEffect } from 'react';
-// Removed duplicate import
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import LocationDetails from './components/LocationDetails';
 import { Toaster, toast } from 'react-hot-toast';
-// import { mockCoffeeShops } from './lib/mockData'; // Remove mock data import
-import type { CoffeeShop, Favorite } from './lib/types'; // Add Favorite type
-import { supabase } from './lib/supabaseClient'; // Import supabase
-import { mockFavorites } from './lib/mockData'; // Import mock favorites
+import type { CoffeeShop } from './lib/types';
+// import { supabase } from './lib/supabaseClient'; // Removed unused import
+// import { mockFavorites } from './lib/mockData'; // Removed unused import
+import Header from './components/Header'; // Import Header
+import { GoogleGenerativeAI } from '@google/generative-ai'; // Import Gemini
+
+// Initialize Gemini AI Client outside component if API key is static
+const apiKeyGemini = import.meta.env.VITE_GEMINI_API_KEY;
+let genAI: GoogleGenerativeAI | null = null;
+let model: any = null; // Use 'any' or a more specific type if available
+if (apiKeyGemini) {
+  genAI = new GoogleGenerativeAI(apiKeyGemini);
+  model = genAI.getGenerativeModel({ model: "gemini-2.5-pro-exp-03-25"});
+} else {
+  console.error("Gemini API Key is missing!");
+  // Handle missing key - maybe disable AI features
+}
 
 // Define interface for Google Places API response structure (simplified)
 interface PlaceResult {
@@ -19,242 +31,195 @@ interface PlaceResult {
       lng: number;
     };
   };
-  vicinity: string; // Nearby Search often returns 'vicinity' instead of 'formatted_address'
+  vicinity: string;
   rating?: number;
-  // Add other fields as needed, though Nearby Search is limited
 }
 
 interface PlacesNearbyResponse {
   results: PlaceResult[];
   status: string;
   error_message?: string;
-  next_page_token?: string; // For pagination, not handled in this basic example
+  next_page_token?: string;
 }
 
 
 function App() {
   const [selectedLocation, setSelectedLocation] = useState<CoffeeShop | null>(null);
   const [coffeeShops, setCoffeeShops] = useState<CoffeeShop[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // Combined loading state
-  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set()); // State for favorite IDs
-  // Keep mapCenter for initial fetch coordinates, remove setMapCenter
-  const [mapCenter] = useState({ lat: 24.1477, lng: 120.6736 }); // Default to Taichung
+  const [isLoading, setIsLoading] = useState(true);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [mapCenter] = useState({ lat: 24.1477, lng: 120.6736 });
+
+  // AI State (moved from Sidebar)
+  const [prompt, setPrompt] = useState('');
+  // const [geminiResponse, setGeminiResponse] = useState(''); // Remove state for AI text response
+  const [isGenerating, setIsGenerating] = useState(false);
+  // const [aiFilteredShopIds, setAiFilteredShopIds] = useState<Set<string> | null>(null); // Remove AI filter state
 
   // Effect to fetch initial data (coffee shops and favorites)
   useEffect(() => {
     const fetchInitialData = async () => {
       setIsLoading(true);
 
-      // --- Fetch Coffee Shops (existing logic) ---
+      // --- Fetch Coffee Shops ---
       const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
       if (!apiKey) {
         toast.error("Google Maps API Key is missing!");
-        setIsLoading(false);
-        return;
-      }
-
-      // Taichung coordinates and search radius
-      const lat = mapCenter.lat;
-      const lng = mapCenter.lng;
-      const radius = 5000; // 5km radius
-      const type = 'cafe'; // Search for cafes
-
-      // Using a CORS proxy for client-side requests to Google Places API Web Service
-      // Option 1: Use a public proxy (less secure, rate limits) - e.g., cors-anywhere
-      // Option 2: Set up your own proxy (recommended for production)
-      // Option 3: Use Google Maps JS API PlacesService (requires map instance, more complex setup here)
-      // Use the Vite proxy path configured in vite.config.ts
-      const apiUrl = `/maps-api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${apiKey}`;
-
-
-      try {
-        const response = await fetch(apiUrl);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data: PlacesNearbyResponse = await response.json();
-
-        if (data.status === 'OK') {
-          const fetchedShops: CoffeeShop[] = data.results.map((place) => ({
-            id: place.place_id,
-            name: place.name,
-            lat: place.geometry.location.lat,
-            lng: place.geometry.location.lng,
-            address: place.vicinity, // Use vicinity as address
-            rating: place.rating,
-            // Other fields will be undefined initially from Nearby Search
-            opening_hours: undefined,
-            price_range: undefined,
-            wifi_available: undefined,
-            pet_friendly: undefined,
-            description: undefined,
-            menu_highlights: [],
-          }));
-          setCoffeeShops(fetchedShops);
-           // Optionally, update map center based on results if needed
-           if (fetchedShops.length > 0 && fetchedShops[0].lat && fetchedShops[0].lng) {
-             // setMapCenter({ lat: fetchedShops[0].lat, lng: fetchedShops[0].lng }); // Keep center for now
-           }
-        } else if (data.status === 'ZERO_RESULTS') {
-           toast.error('No coffee shops found nearby.');
-           setCoffeeShops([]);
-        } else {
-          console.error('Google Places API Error:', data.status, data.error_message);
-          toast.error(`Error fetching places: ${data.error_message || data.status}`);
-          setCoffeeShops([]); // Clear shops on error
-        }
-      } catch (error) {
-        console.error('Failed to fetch coffee shops:', error);
-        toast.error('Failed to load coffee shop data. Please try again later.');
-        setCoffeeShops([]); // Clear shops on fetch error
-      } // End of coffee shop fetch try-catch
-
-      // --- Fetch Favorites ---
-      let initialFavoriteIds = new Set<string>();
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: favoritesData, error: favoritesError } = await supabase
-            .from('favorites')
-            .select('coffee_shop_id')
-            .eq('user_id', user.id);
-
-          if (favoritesError) {
-            console.error("Error fetching favorites:", favoritesError);
-            // Fallback to mock favorites if Supabase fails
-            initialFavoriteIds = new Set(mockFavorites.filter(fav => fav.user_id === 'user-1').map(fav => fav.coffee_shop_id));
-          } else if (favoritesData) {
-            initialFavoriteIds = new Set(favoritesData.map(fav => fav.coffee_shop_id));
+        // Don't set loading false yet, try fetching favorites
+      } else {
+        const lat = mapCenter.lat;
+        const lng = mapCenter.lng;
+        const radius = 5000;
+        const type = 'cafe';
+        const apiUrl = `/maps-api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${apiKey}`;
+        try {
+          const response = await fetch(apiUrl);
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          const data: PlacesNearbyResponse = await response.json();
+          if (data.status === 'OK') {
+            const fetchedShops: CoffeeShop[] = data.results.map((place) => ({
+              id: place.place_id, name: place.name, lat: place.geometry.location.lat, lng: place.geometry.location.lng,
+              address: place.vicinity, rating: place.rating, opening_hours: undefined, price_range: undefined,
+              wifi_available: undefined, pet_friendly: undefined, description: undefined, menu_highlights: [],
+            }));
+            setCoffeeShops(fetchedShops);
+          } else if (data.status === 'ZERO_RESULTS') {
+            toast.error('No coffee shops found nearby.'); setCoffeeShops([]);
+          } else {
+            console.error('Google Places API Error:', data.status, data.error_message);
+            toast.error(`Error fetching places: ${data.error_message || data.status}`); setCoffeeShops([]);
           }
-        } else {
-           // Use mock favorites if no user
-           initialFavoriteIds = new Set(mockFavorites.filter(fav => fav.user_id === 'user-1').map(fav => fav.coffee_shop_id));
+        } catch (error) {
+          console.error('Failed to fetch coffee shops:', error);
+          toast.error('Failed to load coffee shop data.'); setCoffeeShops([]);
         }
-      } catch (err) {
-         console.error("Error getting user or fetching favorites:", err);
-         initialFavoriteIds = new Set(mockFavorites.filter(fav => fav.user_id === 'user-1').map(fav => fav.coffee_shop_id));
       }
-      setFavoriteIds(initialFavoriteIds);
+
+      // --- Load Favorites from localStorage ---
+      const savedFavorites = localStorage.getItem('coffeeLoverFavorites');
+      if (savedFavorites) {
+        try {
+          const favoriteIdsArray = JSON.parse(savedFavorites);
+          if (Array.isArray(favoriteIdsArray)) {
+            setFavoriteIds(new Set(favoriteIdsArray));
+          } else {
+             console.warn("Invalid favorites format in localStorage");
+             setFavoriteIds(new Set()); // Initialize empty if format is wrong
+          }
+        } catch (e) {
+          console.error("Failed to parse favorites from localStorage", e);
+          setFavoriteIds(new Set()); // Initialize empty on error
+        }
+      } else {
+         setFavoriteIds(new Set()); // Initialize empty if nothing saved
+      }
+
 
       // --- Finish Loading ---
-      setIsLoading(false); // Set loading false after both fetches attempt
-    }; // End of fetchInitialData function
-
-    fetchInitialData();
-  }, [mapCenter]); // Dependency remains mapCenter for initial load trigger
-
-  // Handler for keyword search triggered from Sidebar
-  const handleKeywordSearch = async (keyword: string) => {
-    setIsLoading(true);
-    setCoffeeShops([]); // Clear existing shops before new search
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      toast.error("Google Maps API Key is missing!");
       setIsLoading(false);
+    };
+    fetchInitialData();
+  }, [mapCenter]); // Keep mapCenter dependency if needed for initial load
+
+  // Effect to save favorites to localStorage whenever they change
+  useEffect(() => {
+    // Avoid saving the initial empty set before data is loaded if desired,
+    // but saving on every change is simpler for now.
+    localStorage.setItem('coffeeLoverFavorites', JSON.stringify(Array.from(favoriteIds)));
+  }, [favoriteIds]);
+
+  // Handler for AI Prompt Submit (moved from Sidebar)
+  const handlePromptSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prompt.trim() || !model) {
+      if (!model) toast.error("AI model not initialized. Check API Key.");
       return;
     }
 
-    // Use Text Search API with the keyword
-    const apiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${mapCenter.lat},${mapCenter.lng}&radius=10000&key=${apiKey}`; // Increased radius for text search
+    setIsGenerating(true);
+    // setGeminiResponse(''); // No longer displaying raw AI response
+    // setAiFilteredShopIds(null); // No longer using this state
 
     try {
-      const response = await fetch(apiUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data: PlacesNearbyResponse = await response.json(); // Reuse same response type for simplicity
+      // New prompt: Ask AI to extract keywords for Google Places search
+      const keywordPrompt = `Extract the key search terms from the following user request about coffee shops in Taichung: "${prompt}". Respond with ONLY the keywords, separated by spaces. For example, if the user asks "quiet cafes with wifi open late", respond with "quiet cafe wifi open late". If the query is unclear, respond with the original query.`;
 
-      if (data.status === 'OK') {
-        const fetchedShops: CoffeeShop[] = data.results.map((place) => ({
-          id: place.place_id,
-          name: place.name,
-          lat: place.geometry.location.lat,
-          lng: place.geometry.location.lng,
-          address: place.vicinity, // Text Search might return formatted_address, but vicinity is safer fallback
-          rating: place.rating,
-          opening_hours: undefined,
-          price_range: undefined,
-          wifi_available: undefined,
-          pet_friendly: undefined,
-          description: undefined,
-          menu_highlights: [],
-        }));
-        setCoffeeShops(fetchedShops);
-        if (fetchedShops.length === 0) {
-          toast.success(`No results found for "${keyword}".`);
-        }
-      } else if (data.status === 'ZERO_RESULTS') {
-        toast.error(`No results found for "${keyword}".`);
-        setCoffeeShops([]);
+      console.log("Sending keyword extraction prompt to AI:", keywordPrompt);
+      const result = await model.generateContent(keywordPrompt);
+      const response = await result.response;
+      const keywords = response.text().trim();
+      console.log("Keywords extracted by AI:", keywords);
+
+      if (keywords) {
+        toast.success(`Searching for: ${keywords}`);
+        await handleKeywordSearch(keywords); // Trigger Google Places search with extracted keywords
       } else {
-        console.error('Google Places Text Search API Error:', data.status, data.error_message);
-        toast.error(`Error searching places: ${data.error_message || data.status}`);
-        setCoffeeShops([]);
+        toast.error("AI could not extract keywords from your request.");
       }
-    } catch (error) {
-      console.error('Failed to fetch coffee shops via keyword:', error);
-      toast.error('Failed to load search results. Please try again later.');
-      setCoffeeShops([]);
+
+    } catch (error: unknown) {
+      console.error("Detailed Error calling Gemini API:", error);
+      let errorMessage = 'An unknown error occurred calling the AI.';
+      if (error instanceof Error) {
+         errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null && 'message' in error) {
+         errorMessage = String((error as { message: unknown }).message);
+      }
+      console.error("Formatted AI Error Message:", errorMessage);
+      toast.error(`AI Error: ${errorMessage}`);
     } finally {
-      // Ensure loading is false even if keyword search fails
-      setIsLoading(false);
+      setIsGenerating(false);
     }
   };
 
-  // Handler for toggling favorite status
-  const handleToggleFavorite = async (shopId: string) => {
-    const isCurrentlyFavorite = favoriteIds.has(shopId);
-    const { data: { user } } = await supabase.auth.getUser();
-    const userId = user?.id || 'user-1'; // Use mock user ID if not logged in
 
-    // Optimistically update UI
+  // Handler for keyword search
+  const handleKeywordSearch = async (keyword: string) => {
+    setIsLoading(true); setCoffeeShops([]);
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) { toast.error("Google Maps API Key is missing!"); setIsLoading(false); return; }
+    const apiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${mapCenter.lat},${mapCenter.lng}&radius=10000&key=${apiKey}`;
+    try {
+      const response = await fetch(apiUrl);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data: PlacesNearbyResponse = await response.json();
+      if (data.status === 'OK') {
+        const fetchedShops: CoffeeShop[] = data.results.map((place) => ({
+          id: place.place_id, name: place.name, lat: place.geometry.location.lat, lng: place.geometry.location.lng,
+          address: place.vicinity, rating: place.rating, opening_hours: undefined, price_range: undefined,
+          wifi_available: undefined, pet_friendly: undefined, description: undefined, menu_highlights: [],
+        }));
+        setCoffeeShops(fetchedShops);
+        if (fetchedShops.length === 0) toast.success(`No results found for "${keyword}".`);
+      } else if (data.status === 'ZERO_RESULTS') {
+        toast.error(`No results found for "${keyword}".`); setCoffeeShops([]);
+      } else {
+        console.error('Google Places Text Search API Error:', data.status, data.error_message);
+        toast.error(`Error searching places: ${data.error_message || data.status}`); setCoffeeShops([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch coffee shops via keyword:', error);
+      toast.error('Failed to load search results.'); setCoffeeShops([]);
+    } finally { setIsLoading(false); }
+  };
+
+  // Handler for toggling favorite status (using localStorage)
+  const handleToggleFavorite = (shopId: string) => {
+    const isCurrentlyFavorite = favoriteIds.has(shopId);
+
+    // Update local state directly
     setFavoriteIds(prevIds => {
       const newIds = new Set(prevIds);
       if (isCurrentlyFavorite) {
         newIds.delete(shopId);
+        toast.success('Removed from favorites');
       } else {
         newIds.add(shopId);
+        toast.success('Added to favorites');
       }
+      // We will save to localStorage in a separate useEffect hook
       return newIds;
     });
-
-    // Update backend (Supabase) - Attempt even if not logged in, using mock user ID
-    try {
-       // Log the key being used just before the call
-       console.log("Using Supabase Anon Key:", import.meta.env.VITE_SUPABASE_ANON_KEY);
-      // if (user) { // Remove login check for now
-        if (isCurrentlyFavorite) {
-          const { error } = await supabase
-            .from('favorites')
-            .delete()
-            .eq('coffee_shop_id', shopId)
-            .eq('user_id', userId);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase
-            .from('favorites')
-            .insert({ coffee_shop_id: shopId, user_id: userId, created_at: new Date().toISOString() });
-           if (error) throw error;
-        }
-      // } else { // Remove else block
-      //    console.log(`Mock toggle favorite for shop ${shopId} (user not logged in)`);
-      // }
-    } catch (error) {
-      console.error("Error updating favorite status in Supabase:", error);
-      toast.error("Failed to update favorite status.");
-      // Revert optimistic UI update on error
-      setFavoriteIds(prevIds => {
-        const newIds = new Set(prevIds);
-        if (isCurrentlyFavorite) {
-          // It failed to delete, so add it back
-          newIds.add(shopId);
-        } else {
-          // It failed to add, so delete it
-          newIds.delete(shopId);
-        }
-        return newIds;
-      });
-    }
   };
 
   const handleSelectLocation = (location: CoffeeShop) => {
@@ -262,37 +227,51 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen">
-      {/* Pass the new handler to Sidebar */}
-      <Sidebar
-        locations={coffeeShops}
-        onSelectLocation={handleSelectLocation}
-        onKeywordSearch={handleKeywordSearch}
+    <> {/* Wrap in Fragment */}
+      <div className="flex flex-col h-screen"> {/* Main container */}
+        <Header
+          prompt={prompt}
+        setPrompt={setPrompt}
+        isGenerating={isGenerating}
+        handlePromptSubmit={handlePromptSubmit}
       />
-      <div className="flex-1 relative">
-        {/* Pass favoriteIds to Map */}
-        <Map
+      <div className="flex flex-1 overflow-hidden"> {/* Added wrapper for sidebar/map */}
+        <Sidebar
           locations={coffeeShops}
-          onMarkerClick={handleSelectLocation}
-          favoriteIds={favoriteIds}
-         />
-        {selectedLocation && (
-          // Pass favoriteIds and toggle handler to LocationDetails
+          onSelectLocation={handleSelectLocation}
+          className="w-96"
+          // geminiResponse={geminiResponse} // AI text response not needed
+          // aiFilteredShopIds={aiFilteredShopIds} // Removed prop
+          // setAiFilteredShopIds={setAiFilteredShopIds} // Removed prop
+        />
+        <div className="flex-1 relative">
+          <Map
+            locations={coffeeShops}
+            onMarkerClick={handleSelectLocation}
+            favoriteIds={favoriteIds}
+            // aiFilteredShopIds={aiFilteredShopIds} // Removed prop
+           />
+          {selectedLocation && (
           <LocationDetails
             location={selectedLocation}
-            isFavorite={favoriteIds.has(selectedLocation.id)}
-            onToggleFavorite={handleToggleFavorite}
+            isFavorite={favoriteIds.has(selectedLocation.id)} // Pass isFavorite
+            onToggleFavorite={handleToggleFavorite} // Pass handler
             onClose={() => setSelectedLocation(null)}
           />
         )}
-      </div>
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-10">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-        </div>
-      )}
+        {/* Loading Overlay moved inside map container */}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-10">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+          </div>
+        )}
+        </div> {/* Close map wrapper */}
+      </div> {/* Close sidebar/map flex wrapper */}
+
+        {/* Toaster moved outside main div, but inside Fragment */}
+      </div> {/* Close main flex container */}
       <Toaster />
-    </div>
+    </> /* Close Fragment */
   );
 }
 

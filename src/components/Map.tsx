@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GoogleMap, useLoadScript, MarkerClusterer, Marker } from '@react-google-maps/api';
+import { GoogleMap, useLoadScript, /* MarkerClusterer, */ Marker } from '@react-google-maps/api'; // Comment out unused import
 import { CoffeeShop } from '../lib/types';
 
 const mapOptions = {
@@ -17,10 +17,11 @@ const mapOptions = {
 interface MapProps {
   locations: CoffeeShop[];
   onMarkerClick: (location: CoffeeShop) => void;
-  favoriteIds: Set<string>; // Add favoriteIds prop
+  favoriteIds: Set<string>;
+  // aiFilteredShopIds: Set<string> | null; // Remove prop
 }
 
-export default function Map({ locations, onMarkerClick, favoriteIds }: MapProps) {
+export default function Map({ locations, onMarkerClick, favoriteIds }: MapProps) { // Remove prop
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   });
@@ -42,27 +43,30 @@ export default function Map({ locations, onMarkerClick, favoriteIds }: MapProps)
       mapContainerClassName="w-full h-full"
       options={mapOptions}
     >
-      <MarkerClusterer>
-        {(clusterer) => (
+      {/* <MarkerClusterer> Temporarily removed for debugging */}
+        {/* {(clusterer) => ( */}
           <>
-            {locations.map((location) => (
-              location.lat && location.lng ? (
-                <Marker
-                  key={location.id}
-                  position={{ lat: location.lat, lng: location.lng }}
-                  clusterer={clusterer}
+            {/* Map directly over locations passed as props */}
+            {locations.map((location) => {
+                const isFavorite = favoriteIds.has(location.id);
+                return location.lat && location.lng ? (
+                  <Marker
+                    key={`${location.id}-${isFavorite}`}
+                    position={{ lat: location.lat, lng: location.lng }}
+                    // clusterer={clusterer} // Keep clusterer commented out
                   icon={{
                     url: `data:image/svg+xml,${encodeURIComponent(
-                      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${favoriteIds.has(location.id) ? '#DC2626' : '#8B4513'}" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/></svg>`
+                      // Use isFavorite variable for fill color
+                      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="${isFavorite ? '#DC2626' : '#8B4513'}" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/></svg>`
                     )}`,
                   }}
                   onClick={() => onMarkerClick(location)}
                 />
-              ) : null
-            ))}
-          </>
-        )}
-      </MarkerClusterer>
+              ) : null;
+            })}
+            </>
+        {/* )} */}
+      {/* </MarkerClusterer> */}
     </GoogleMap>
   );
 }
