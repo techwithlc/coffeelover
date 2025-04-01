@@ -4,11 +4,13 @@ import fetch from 'node-fetch'; // Use node-fetch for making requests in Node.js
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
   // Use the standard environment variable name (set in Netlify UI)
   const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+  console.log("Function invoked. Trying to read GOOGLE_MAPS_API_KEY..."); // Log start
 
   if (!GOOGLE_MAPS_API_KEY) {
+    console.error("GOOGLE_MAPS_API_KEY environment variable not found!"); // Log error
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Google Maps API Key is not configured." }),
+      body: JSON.stringify({ error: "Google Maps API Key is not configured on the server." }),
     };
   }
 

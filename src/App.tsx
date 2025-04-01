@@ -71,7 +71,8 @@ function App() {
         const lng = mapCenter.lng;
         const radius = 5000;
         const type = 'cafe';
-        const apiUrl = `/maps-api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${apiKey}`;
+        // Remove key=${apiKey} from the client-side fetch URL
+        const apiUrl = `/maps-api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}`;
         try {
           const response = await fetch(apiUrl);
           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -176,9 +177,12 @@ function App() {
   // Handler for keyword search
   const handleKeywordSearch = async (keyword: string) => {
     setIsLoading(true); setCoffeeShops([]);
+    // API key check is still useful here to prevent unnecessary calls if missing locally,
+    // but we don't include it in the fetch URL itself.
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     if (!apiKey) { toast.error("Google Maps API Key is missing!"); setIsLoading(false); return; }
-    const apiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${mapCenter.lat},${mapCenter.lng}&radius=10000&key=${apiKey}`;
+    // Remove key=${apiKey} from the client-side fetch URL
+    const apiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${mapCenter.lat},${mapCenter.lng}&radius=10000`;
     try {
       const response = await fetch(apiUrl);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
