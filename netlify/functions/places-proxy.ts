@@ -2,7 +2,8 @@ import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
 import fetch from 'node-fetch'; // Use node-fetch for making requests in Node.js environment
 
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
-  const GOOGLE_MAPS_API_KEY = process.env.VITE_GOOGLE_MAPS_API_KEY;
+  // Use the standard environment variable name (set in Netlify UI)
+  const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
   if (!GOOGLE_MAPS_API_KEY) {
     return {
