@@ -19,10 +19,16 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
   const functionPathPrefix = `/.netlify/functions/places-proxy`;
   let apiPath = event.path;
   if (apiPath.startsWith(functionPathPrefix)) {
-    apiPath = apiPath.substring(functionPathPrefix.length);
+    apiPath = apiPath.substring(functionPathPrefix.length); // e.g., /place/nearbysearch/json OR potentially /maps-api/place/...
   }
-  // Ensure it maps correctly to the Google endpoint structure
-  const targetUrl = `https://maps.googleapis.com/maps/api${apiPath}`; // Prepend /maps/api
+  // Explicitly remove potential leading /maps-api/ if present due to unexpected event.path structure
+  if (apiPath.startsWith('/maps-api/')) {
+      console.warn("Removing unexpected '/maps-api/' prefix from apiPath");
+      apiPath = apiPath.substring('/maps-api'.length); // Should leave /place/...
+  }
+
+  // Construct the final target URL
+  const targetUrl = `https://maps.googleapis.com/maps/api${apiPath}`;
 
   // Append the API key and any existing query parameters
   const url = new URL(targetUrl);
