@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Star, Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe } from 'lucide-react'; // Added ExternalLink, Globe
-import { supabase } from '../lib/supabaseClient';
-import { CoffeeShop, Review } from '../lib/types';
-import { mockReviews } from '../lib/mockData';
+import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe } from 'lucide-react';
+// import { supabase } from '../lib/supabaseClient'; // Removed unused import
+import { CoffeeShop /*, Review */ } from '../lib/types'; // Remove unused Review type
+// import { mockReviews } from '../lib/mockData'; // Remove unused import
 
-// Define structure for Place Details response (add fields as needed)
+// Define structure for Place Details response
 interface PlaceDetailsResult {
   formatted_address?: string;
   opening_hours?: {
     weekday_text?: string[];
-    open_now?: boolean; // Useful to show current status
+    open_now?: boolean;
   };
   photos?: {
     photo_reference: string;
@@ -18,7 +18,6 @@ interface PlaceDetailsResult {
     html_attributions: string[];
   }[];
   website?: string;
-  // Add other fields like international_phone_number, etc. if needed
 }
 
 interface PlaceDetailsResponse {
@@ -27,109 +26,60 @@ interface PlaceDetailsResponse {
   error_message?: string;
 }
 
+// Define structure for Photo Proxy response
+interface PhotoProxyResponse {
+  imageUrl?: string;
+  error?: string;
+}
 
 interface Props {
-  location: CoffeeShop; // Base location info from list/map
+  location: CoffeeShop;
   isFavorite: boolean;
   onToggleFavorite: (shopId: string) => void;
   onClose: () => void;
 }
 
 export default function LocationDetails({ location, isFavorite, onToggleFavorite, onClose }: Props) {
-  const [reviews, setReviews] = useState<Review[]>([]);
   const [placeDetails, setPlaceDetails] = useState<PlaceDetailsResult | null>(null);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null); // State for the actual photo URL
-  const [newReview, setNewReview] = useState({ rating: 5, comment: '' });
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(true);
 
-  // Fetch Place Details, Reviews, and Photo URL when location changes
+  // Helper to construct the PROXY URL for fetching the actual photo URL
+  const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
+    return `/maps-api/place/photo?maxwidth=${maxWidth}&photoreference=${photoReference}`;
+  };
+
+  // Effect to fetch Place Details
   useEffect(() => {
     const fetchData = async () => {
       setIsLoadingDetails(true);
-      setReviews([]);
-      setPlaceDetails(null); // Clear previous details
+      setPlaceDetails(null);
+      setPhotoUrl(null);
 
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-         console.error("Google Maps API Key missing for Place Details fetch");
-         // Don't fully stop loading if reviews might still load from mock
-      }
+      // No API key needed here, proxy handles it
+      const fields = 'formatted_address,opening_hours,website,photo,name';
+      const detailsApiUrl = `/maps-api/place/details/json?placeid=${location.id}&fields=${fields}`;
 
-      // --- Fetch Place Details (if API key exists) ---
-      if (apiKey) {
-        // Define fields to request (manage costs!)
-        const fields = 'formatted_address,opening_hours,website,photo,name'; // Add more fields as needed
-        const detailsApiUrl = `/maps-api/place/details/json?placeid=${location.id}&fields=${fields}&key=${apiKey}`;
-
-        try {
-           const detailsResponse = await fetch(detailsApiUrl);
-           if (!detailsResponse.ok) throw new Error(`HTTP error! status: ${detailsResponse.status}`);
-           const detailsData: PlaceDetailsResponse = await detailsResponse.json();
-
-           if (detailsData.status === 'OK' && detailsData.result) {
-             setPlaceDetails(detailsData.result);
-           } else {
-             console.error('Google Place Details API Error:', detailsData.status, detailsData.error_message);
-           }
-        } catch (error) {
-           console.error('Failed to fetch place details:', error);
-        }
-      }
-
-      // --- Fetch Reviews (existing logic, might still fail with 401) ---
       try {
-        const { data: reviewsData, error: reviewsError } = await supabase
-          .from('reviews')
-          .select('*')
-          .eq('coffee_shop_id', location.id);
+        const detailsResponse = await fetch(detailsApiUrl);
+        if (!detailsResponse.ok) throw new Error(`HTTP error! status: ${detailsResponse.status}`);
+        const detailsData: PlaceDetailsResponse = await detailsResponse.json();
 
-        if (reviewsError || !reviewsData || reviewsData.length === 0) {
-          console.warn(`Using mock reviews data for ${location.id}`);
-          const filteredReviews = mockReviews.filter(
-            review => review.coffee_shop_id === location.id
-          );
-          setReviews(filteredReviews);
+        if (detailsData.status === 'OK' && detailsData.result) {
+          setPlaceDetails(detailsData.result);
         } else {
-          setReviews(reviewsData);
+          console.error('Google Place Details API Error:', detailsData.status, detailsData.error_message);
         }
-      } catch (err) {
-        console.error('Error fetching reviews:', err);
-        const filteredReviews = mockReviews.filter(
-          review => review.coffee_shop_id === location.id
-        );
-        setReviews(filteredReviews);
+      } catch (error) {
+        console.error('Failed to fetch place details:', error);
+      } finally {
+         // Set loading false only after details attempt
+         setIsLoadingDetails(false);
       }
-
-      // --- Fetch Photo URL ---
-      if (placeDetails?.photos && placeDetails.photos.length > 0) {
-        const photoRef = placeDetails.photos[0].photo_reference;
-        const proxyUrl = getPhotoProxyUrl(photoRef, 800); // Use helper
-        try {
-          const photoResponse = await fetch(proxyUrl);
-          if (!photoResponse.ok) throw new Error(`Photo proxy error! status: ${photoResponse.status}`);
-          const photoData = await photoResponse.json(); // Expect { imageUrl: "..." }
-          if (photoData.imageUrl) {
-            setPhotoUrl(photoData.imageUrl);
-          } else {
-             console.error("Photo proxy did not return an imageUrl");
-          }
-        } catch (error) {
-          console.error("Failed to fetch photo URL via proxy:", error);
-        }
-      } else {
-         setPhotoUrl(null); // Reset photo URL if no photos in details
-      }
-
-
-      // Set loading false after all fetches attempt
-      setIsLoadingDetails(false);
-
     };
 
     fetchData();
-    // Clear photoUrl when location changes initially
-    setPhotoUrl(null);
-  }, [location.id]); // Depend only on location.id
+  }, [location.id]);
 
   // Separate effect to fetch photo URL *after* placeDetails are loaded
   useEffect(() => {
@@ -140,54 +90,26 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
         try {
           const photoResponse = await fetch(proxyUrl);
           if (!photoResponse.ok) throw new Error(`Photo proxy error! status: ${photoResponse.status}`);
-          const photoData = await photoResponse.json();
+          const photoData: PhotoProxyResponse = await photoResponse.json();
           if (photoData.imageUrl) {
             setPhotoUrl(photoData.imageUrl);
           } else {
-            console.error("Photo proxy did not return an imageUrl");
+            console.error("Photo proxy did not return an imageUrl:", photoData.error);
           }
         } catch (error) {
           console.error("Failed to fetch photo URL via proxy:", error);
         }
       } else {
-        setPhotoUrl(null); // Ensure photoUrl is null if no photos
+        setPhotoUrl(null);
       }
     };
 
-    if (placeDetails) { // Only fetch photo if details are available
+    if (placeDetails) {
       fetchPhoto();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placeDetails]); // Correctly placed dependency array for second useEffect
-
-  const handleSubmitReview = async (e: React.FormEvent) => {
-    e.preventDefault();
-    // ... (review submission logic remains the same)
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      const userId = user?.id || 'user-1';
-      const newReviewObj: Partial<Review> = {
-        coffee_shop_id: location.id,
-        user_id: userId,
-        rating: newReview.rating,
-        comment: newReview.comment,
-        created_at: new Date().toISOString()
-      };
-      if (user) {
-        const { error } = await supabase.from('reviews').insert(newReviewObj);
-        if (error) console.error('Error submitting review to Supabase:', error);
-      }
-      const newReviewWithId: Review = { ...newReviewObj as Review, id: `review-${Date.now()}` };
-      setReviews(prev => [newReviewWithId, ...prev]);
-      setNewReview({ rating: 5, comment: '' });
-    } catch (err) {
-      console.error('Error in handleSubmitReview:', err);
-      alert('Failed to submit review. Please try again.');
-    }
-  };
+  }, [placeDetails]);
 
   const handleShare = () => {
-    // ... (share logic remains the same)
     const shareUrl = `${window.location.origin}/shop/${location.id}`;
     if (navigator.share) {
       navigator.share({
@@ -209,15 +131,8 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
       .catch(err => console.error('Could not copy text: ', err));
   };
 
-  // Helper to construct the PROXY URL for fetching the actual photo URL
-  const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
-    // No API key needed here, the proxy function handles it
-    return `/maps-api/place/photo?maxwidth=${maxWidth}&photoreference=${photoReference}`;
-  };
-
-
-  // Use the new loading state for the whole panel initially
-  if (isLoadingDetails) {
+  // Loading state
+  if (isLoadingDetails && !placeDetails) {
     return (
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
         <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-8 flex items-center justify-center">
@@ -229,15 +144,12 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   }
 
   return (
-    // Modal backdrop
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      {/* Modal Panel */}
-      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-8 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex justify-between items-start mb-6 border-b pb-4">
-          <h2 className="text-3xl font-semibold text-gray-800">{location.name || 'Coffee Shop'}</h2>
-          <div className="flex items-center gap-3">
-            {/* Favorite Button */}
+        <div className="flex justify-between items-start mb-4 md:mb-6 border-b pb-3 md:pb-4">
+          <h2 className="text-2xl md:text-3xl font-semibold text-gray-800">{location.name || 'Coffee Shop'}</h2>
+          <div className="flex items-center gap-2 md:gap-3">
             <button
               onClick={() => onToggleFavorite(location.id)}
               title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
@@ -249,7 +161,6 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
             >
               <Heart size={20} className={isFavorite ? 'fill-current' : ''} />
             </button>
-            {/* Close Button */}
             <button
               onClick={onClose}
               title="Close details"
@@ -262,24 +173,24 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
           </div>
         </div>
 
-         {/* Photo - Use fetched photoUrl state */}
-         {photoUrl ? ( // Display only if photoUrl is successfully fetched
-           <div className="mb-6 rounded-lg overflow-hidden">
+         {/* Photo */}
+         {photoUrl ? (
+           <div className="mb-4 md:mb-6 rounded-lg overflow-hidden">
              <img
-               src={photoUrl} // Use the fetched URL
+               src={photoUrl}
                alt={`Photo of ${location.name}`}
                className="w-full h-48 object-cover"
-               // Consider adding attribution if required by photos[0].html_attributions
              />
            </div>
-         )}
+         ) : isLoadingDetails ? (
+            <div className="mb-4 md:mb-6 rounded-lg overflow-hidden bg-gray-200 h-48 flex items-center justify-center">
+                <p className="text-gray-500 text-sm">Loading photo...</p>
+            </div>
+         ) : null }
 
         {/* Coffee Shop Details */}
         <div className="mb-6">
-          {/* Use formatted_address from details if available, fallback to original address */}
           <p className="text-gray-600 mb-2">{placeDetails?.formatted_address || location.address}</p>
-
-          {/* Website Link */}
            {placeDetails?.website && (
              <a
                href={placeDetails.website}
@@ -290,8 +201,6 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
                <Globe size={14} /> Website <ExternalLink size={12} className="ml-1"/>
              </a>
            )}
-
-          {/* Opening Hours */}
           {placeDetails?.opening_hours?.weekday_text && (
             <div className="mb-4 p-3 bg-gray-50 rounded border">
               <h4 className="text-sm font-semibold mb-1 flex items-center gap-1">
@@ -309,8 +218,6 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               </ul>
             </div>
           )}
-
-          {/* Original Amenities (still useful as fallbacks or if not in Place Details) */}
           <div className="grid grid-cols-2 gap-4 mt-4">
             {location.price_range && (
               <div className="flex items-center gap-2">
@@ -331,11 +238,9 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               </div>
             )}
           </div>
-
           {location.description && (
             <p className="text-gray-700 mt-4">{location.description}</p>
           )}
-
           {location.menu_highlights && location.menu_highlights.length > 0 && (
             <div className="mt-4">
               <h3 className="text-md font-semibold text-gray-700">Menu Highlights</h3>
@@ -346,8 +251,6 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               </ul>
             </div>
           )}
-
-          {/* Share Button */}
           <button
             onClick={handleShare}
             className="mt-6 flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
@@ -363,57 +266,9 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
           </button>
         </div>
 
-        {/* Reviews Section */}
-        <div className="mb-8 border-t pt-6">
-          <h3 className="text-xl font-semibold text-gray-700 mb-4">Reviews</h3>
-          {/* Review display logic remains the same */}
-          <div className="space-y-4">
-            {reviews.length > 0 ? (
-              reviews.map((review) => (
-                <div key={review.id} className="border-b border-gray-200 pb-4">
-                  <div className="flex items-center gap-1 mb-1">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} size={16} className={ i < review.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300' } />
-                    ))}
-                  </div>
-                  <p className="text-gray-700 text-sm">
-                    {review.comment || <span className="italic text-gray-500">No comment provided.</span>}
-                  </p>
-                  {review.created_at && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {new Date(review.created_at).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 italic">No reviews yet for this coffee shop.</p>
-            )}
-          </div>
-        </div>
+        {/* Removed Reviews Section */}
+        {/* Removed Review Form Section */}
 
-        {/* Review Form Section */}
-        <form onSubmit={handleSubmitReview} className="space-y-4 border-t border-gray-200 pt-6 mt-6">
-           {/* Review form logic remains the same */}
-           <h3 className="text-xl font-semibold text-gray-700 mb-4">Leave a Review</h3>
-           <div>
-             <label className="block text-sm font-medium text-gray-700 mb-1">Your Rating</label>
-             <div className="flex items-center gap-1">
-               {[1, 2, 3, 4, 5].map((ratingValue) => (
-                 <button key={ratingValue} type="button" title={`Rate ${ratingValue} star${ratingValue > 1 ? 's' : ''}`} onClick={() => setNewReview(prev => ({ ...prev, rating: ratingValue }))} className="p-1 rounded-full text-gray-300 hover:text-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-offset-1 transition-colors duration-150 ease-in-out">
-                   <Star size={24} className={`transition-colors duration-150 ease-in-out ${ ratingValue <= newReview.rating ? 'text-yellow-400 fill-yellow-400' : 'hover:text-yellow-300' }`} />
-                 </button>
-               ))}
-             </div>
-           </div>
-           <div>
-             <label htmlFor="comment" className="block text-sm font-medium text-gray-700">Your Comment</label>
-             <textarea id="comment" value={newReview.comment} onChange={(e) => setNewReview(prev => ({ ...prev, comment: e.target.value }))} className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3" rows={4} placeholder="Share your experience at this coffee shop..."></textarea>
-           </div>
-           <button type="submit" className="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
-             Submit Review
-           </button>
-        </form>
       </div>
     </div>
   );
