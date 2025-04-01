@@ -14,11 +14,15 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     };
   }
 
-  // Construct the target Google Maps API URL
-  // event.path starts with /.netlify/functions/places-proxy/
-  // We want to map /maps/api/place/... to the Google endpoint
-  const googleMapsPath = event.path.replace('/.netlify/functions/places-proxy', '/maps/api');
-  const targetUrl = `https://maps.googleapis.com${googleMapsPath}`;
+  // Construct the target Google Maps API URL more robustly
+  // Remove the function path prefix to get the intended API path
+  const functionPathPrefix = `/.netlify/functions/places-proxy`;
+  let apiPath = event.path;
+  if (apiPath.startsWith(functionPathPrefix)) {
+    apiPath = apiPath.substring(functionPathPrefix.length);
+  }
+  // Ensure it maps correctly to the Google endpoint structure
+  const targetUrl = `https://maps.googleapis.com/maps/api${apiPath}`; // Prepend /maps/api
 
   // Append the API key and any existing query parameters
   const url = new URL(targetUrl);
