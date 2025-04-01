@@ -44,28 +44,60 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     });
   }
 
-  console.log(`Proxying request to: ${url.toString()}`); // Log for debugging
+  console.log(`Proxying request to: ${url.toString()}`);
 
   try {
-    const response = await fetch(url.toString());
-    const data = await response.json();
+    // Check if it's a photo request
+    const isPhotoRequest = apiPath.startsWith('/place/photo');
+
+    const response = await fetch(url.toString(), {
+      // Important: Do not follow redirects automatically for photo requests,
+      // as we want the final image URL which might be in the Location header.
+      // However, node-fetch v2 follows redirects by default. Let's fetch normally
+      // and check the final response URL. If it's not JSON, return the URL.
+      redirect: 'follow' // Keep default follow for simplicity for now
+    });
 
     if (!response.ok) {
-      console.error("Google Maps API Error:", data);
+      // Try parsing error as JSON first
+      let errorData;
+      try {
+        errorData = await response.json();
+        console.error("Google Maps API Error (JSON):", errorData);
+      } catch (e) {
+        // If not JSON, read as text
+        const errorText = await response.text();
+        console.error("Google Maps API Error (Non-JSON):", errorText);
+        errorData = { error_message: errorText || response.statusText };
+      }
       return {
         statusCode: response.status,
-        body: JSON.stringify({ error: `Google Maps API Error: ${data?.error_message || response.statusText}` }),
+        body: JSON.stringify({ error: `Google Maps API Error: ${errorData?.error_message || response.statusText}` }),
       };
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify(data),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    };
-  } catch (error) {
+    // If it was a photo request and the response looks like an image URL (from redirect)
+    // or if the content type suggests an image, return the final URL.
+    // Google Photos API redirects to the actual image URL.
+    if (isPhotoRequest) {
+       // The final URL after redirects is in response.url with node-fetch v2
+       console.log("Photo request successful, returning final URL:", response.url);
+       return {
+         statusCode: 200,
+         body: JSON.stringify({ imageUrl: response.url }), // Send back the final image URL as JSON
+         headers: { 'Content-Type': 'application/json' },
+       };
+    } else {
+      // Otherwise, parse and return as JSON (for nearbysearch, textsearch, etc.)
+      const data = await response.json();
+      return {
+        statusCode: 200,
+        body: JSON.stringify(data),
+        headers: { 'Content-Type': 'application/json' },
+      };
+    }
+
+  } catch (error: any) { // Add type 'any' to error
     console.error("Proxy function error:", error);
     return {
       statusCode: 500,

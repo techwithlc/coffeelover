@@ -37,11 +37,12 @@ interface Props {
 
 export default function LocationDetails({ location, isFavorite, onToggleFavorite, onClose }: Props) {
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [placeDetails, setPlaceDetails] = useState<PlaceDetailsResult | null>(null); // State for details
+  const [placeDetails, setPlaceDetails] = useState<PlaceDetailsResult | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null); // State for the actual photo URL
   const [newReview, setNewReview] = useState({ rating: 5, comment: '' });
-  const [isLoadingDetails, setIsLoadingDetails] = useState(true); // Loading for details + reviews
+  const [isLoadingDetails, setIsLoadingDetails] = useState(true);
 
-  // Fetch Place Details and Reviews when location changes
+  // Fetch Place Details, Reviews, and Photo URL when location changes
   useEffect(() => {
     const fetchData = async () => {
       setIsLoadingDetails(true);
@@ -97,14 +98,67 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
           review => review.coffee_shop_id === location.id
         );
         setReviews(filteredReviews);
-      } finally {
-        // Set loading false after both fetches attempt
-        setIsLoadingDetails(false);
       }
+
+      // --- Fetch Photo URL ---
+      if (placeDetails?.photos && placeDetails.photos.length > 0) {
+        const photoRef = placeDetails.photos[0].photo_reference;
+        const proxyUrl = getPhotoProxyUrl(photoRef, 800); // Use helper
+        try {
+          const photoResponse = await fetch(proxyUrl);
+          if (!photoResponse.ok) throw new Error(`Photo proxy error! status: ${photoResponse.status}`);
+          const photoData = await photoResponse.json(); // Expect { imageUrl: "..." }
+          if (photoData.imageUrl) {
+            setPhotoUrl(photoData.imageUrl);
+          } else {
+             console.error("Photo proxy did not return an imageUrl");
+          }
+        } catch (error) {
+          console.error("Failed to fetch photo URL via proxy:", error);
+        }
+      } else {
+         setPhotoUrl(null); // Reset photo URL if no photos in details
+      }
+
+
+      // Set loading false after all fetches attempt
+      setIsLoadingDetails(false);
+
     };
 
     fetchData();
+    // Clear photoUrl when location changes initially
+    setPhotoUrl(null);
   }, [location.id]); // Depend only on location.id
+
+  // Separate effect to fetch photo URL *after* placeDetails are loaded
+  useEffect(() => {
+    const fetchPhoto = async () => {
+      if (placeDetails?.photos && placeDetails.photos.length > 0) {
+        const photoRef = placeDetails.photos[0].photo_reference;
+        const proxyUrl = getPhotoProxyUrl(photoRef, 800);
+        try {
+          const photoResponse = await fetch(proxyUrl);
+          if (!photoResponse.ok) throw new Error(`Photo proxy error! status: ${photoResponse.status}`);
+          const photoData = await photoResponse.json();
+          if (photoData.imageUrl) {
+            setPhotoUrl(photoData.imageUrl);
+          } else {
+            console.error("Photo proxy did not return an imageUrl");
+          }
+        } catch (error) {
+          console.error("Failed to fetch photo URL via proxy:", error);
+        }
+      } else {
+        setPhotoUrl(null); // Ensure photoUrl is null if no photos
+      }
+    };
+
+    if (placeDetails) { // Only fetch photo if details are available
+      fetchPhoto();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeDetails]); // Correctly placed dependency array for second useEffect
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,12 +209,10 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
       .catch(err => console.error('Could not copy text: ', err));
   };
 
-  // Helper to get photo URL
-  const getPhotoUrl = (photoReference: string, maxWidth = 400) => {
-    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return ''; // Or a placeholder image URL
-    // Use the Vite proxy path
-    return `/maps-api/place/photo?maxwidth=${maxWidth}&photoreference=${photoReference}&key=${apiKey}`;
+  // Helper to construct the PROXY URL for fetching the actual photo URL
+  const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
+    // No API key needed here, the proxy function handles it
+    return `/maps-api/place/photo?maxwidth=${maxWidth}&photoreference=${photoReference}`;
   };
 
 
@@ -210,11 +262,11 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
           </div>
         </div>
 
-         {/* Photo */}
-         {placeDetails?.photos && placeDetails.photos.length > 0 && (
+         {/* Photo - Use fetched photoUrl state */}
+         {photoUrl ? ( // Display only if photoUrl is successfully fetched
            <div className="mb-6 rounded-lg overflow-hidden">
              <img
-               src={getPhotoUrl(placeDetails.photos[0].photo_reference, 800)} // Get URL for the first photo
+               src={photoUrl} // Use the fetched URL
                alt={`Photo of ${location.name}`}
                className="w-full h-48 object-cover"
                // Consider adding attribution if required by photos[0].html_attributions
