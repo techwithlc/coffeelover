@@ -1,6 +1,21 @@
 // src/lib/types.ts
 // Manually defined types for the application
 
+// Google Places Opening Hours structure
+export interface OpeningHoursPeriodDetail {
+  day: number; // 0-6, Sunday-Saturday
+  time: string; // HHMM format
+}
+export interface OpeningHoursPeriod {
+  open: OpeningHoursPeriodDetail;
+  close?: OpeningHoursPeriodDetail; // May be undefined for 24/7
+}
+export interface OpeningHours {
+  open_now?: boolean;
+  periods?: OpeningHoursPeriod[];
+  weekday_text?: string[];
+}
+
 // Coffee shop type definition
 export interface CoffeeShop {
   id: string;
@@ -8,7 +23,7 @@ export interface CoffeeShop {
   address?: string;
   lat?: number;
   lng?: number;
-  opening_hours?: string;
+  opening_hours?: OpeningHours; // Use the detailed type
   description?: string;
   rating?: number;
   price_range?: string;
