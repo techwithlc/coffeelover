@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+// Remove unused useEffect and useState
 import { GoogleMap, useLoadScript, /* MarkerClusterer, */ Marker } from '@react-google-maps/api'; // Comment out unused import
 import { CoffeeShop } from '../lib/types';
 
 const mapOptions = {
   disableDefaultUI: true,
   clickableIcons: false,
-  styles: [
+  styles: [ // Keep existing styles
     {
       featureType: 'poi',
       elementType: 'labels',
@@ -15,24 +15,18 @@ const mapOptions = {
 };
 
 interface MapProps {
+  center: { lat: number; lng: number }; // Add center prop
   locations: CoffeeShop[];
   onMarkerClick: (location: CoffeeShop) => void;
   favoriteIds: Set<string>;
-  // aiFilteredShopIds: Set<string> | null; // Remove prop
 }
 
-export default function Map({ locations, onMarkerClick, favoriteIds }: MapProps) { // Remove prop
+export default function Map({ center, locations, onMarkerClick, favoriteIds }: MapProps) { // Add center prop
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
   });
 
-  const [center, setCenter] = useState({ lat: 24.1477, lng: 120.6736 });
-
-  useEffect(() => {
-    if (locations.length > 0 && locations[0].lat && locations[0].lng) {
-      setCenter({ lat: locations[0].lat, lng: locations[0].lng });
-    }
-  }, [locations]);
+  // Remove internal center state and the useEffect that sets it
 
   if (!isLoaded) return <div className="w-full h-full flex items-center justify-center">Loading Maps...</div>;
 

@@ -103,7 +103,8 @@ function App() {
   const [coffeeShops, setCoffeeShops] = useState<CoffeeShop[]>([]);
   const [isLoading, setIsLoading] = useState(true); // For initial load / major searches
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
-  const [mapCenter] = useState({ lat: 24.1477, lng: 120.6736 });
+  // Use state for map center so it can be updated
+  const [currentMapCenter, setCurrentMapCenter] = useState({ lat: 24.1477, lng: 120.6736 });
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false); // Specifically for AI interaction
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null); // User's current location
@@ -119,10 +120,12 @@ function App() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        setUserLocation({ lat: latitude, lng: longitude });
-        toast.success("Location found!", { id: loadingToast });
+        const newLocation = { lat: latitude, lng: longitude };
+        setUserLocation(newLocation);
+        setCurrentMapCenter(newLocation); // Update map center to user's location
+        toast.success("Location found! Map centered.", { id: loadingToast });
         // Optionally trigger a search based on the new location here
-        // handleKeywordSearch(`coffee near me`, null, null, undefined, { lat: latitude, lng: longitude });
+        // handleKeywordSearch(`coffee near me`, null, null, undefined, newLocation);
       },
       (error) => {
         console.error("Geolocation error:", error);
@@ -155,7 +158,8 @@ function App() {
       setIsLoading(true);
       const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
       if (apiKey) {
-        const lat = mapCenter.lat; const lng = mapCenter.lng; const radius = 5000; const type = 'cafe';
+        // Use currentMapCenter for initial load as well
+        const lat = currentMapCenter.lat; const lng = currentMapCenter.lng; const radius = 5000; const type = 'cafe';
         const apiUrl = `/maps-api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}`;
         try {
           const response = await fetch(apiUrl);
@@ -190,7 +194,8 @@ function App() {
       setIsLoading(false);
     };
     fetchInitialData();
-  }, [mapCenter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only once on initial load (mapCenter doesn't change)
 
   // Effect to save favorites
   useEffect(() => {
@@ -342,8 +347,8 @@ Respond ONLY with JSON that strictly follows one of these formats:
     }
 
     let candidateShops: PlaceResult[] = [];
-    // Determine location to use: override > userLocation > mapCenter
-    const searchLocation = locationOverride ?? userLocation ?? mapCenter;
+    // Determine location to use: override > userLocation > currentMapCenter
+    const searchLocation = locationOverride ?? userLocation ?? currentMapCenter;
     // Determine if we can use the efficient 'opennow' parameter
     const useOpenNowParam = filters?.openNow === true && !filters.openAfter && !filters.wifi; // Only use if 'openNow' is the sole filter
 
@@ -505,7 +510,13 @@ Respond ONLY with JSON that strictly follows one of these formats:
         <div className="flex flex-1 overflow-hidden">
           <Sidebar locations={coffeeShops} onSelectLocation={handleSelectLocation} className="hidden md:flex w-96 flex-col" />
           <div className="flex-1 relative">
-            <Map locations={coffeeShops} onMarkerClick={handleSelectLocation} favoriteIds={favoriteIds} />
+            {/* Pass currentMapCenter to the Map component */}
+            <Map
+              center={currentMapCenter} // Pass dynamic center
+              locations={coffeeShops}
+              onMarkerClick={handleSelectLocation}
+              favoriteIds={favoriteIds}
+            />
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-10">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
