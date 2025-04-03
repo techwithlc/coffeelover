@@ -218,7 +218,8 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               </ul>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-4 mt-4">
+          {/* Stack grid on xs, two columns on sm+ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
             {location.price_range && (
               <div className="flex items-center gap-2">
                 <DollarSign size={18} className="text-gray-500" />

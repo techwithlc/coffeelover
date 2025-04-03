@@ -14,9 +14,12 @@ const Header: React.FC<HeaderProps> = ({
   handlePromptSubmit,
 }) => {
   return (
-    <header className="p-4 border-b bg-white shadow-sm flex items-center">
-      <div className="text-xl font-bold text-blue-600 mr-6">Coffeelover</div>
-      <form onSubmit={handlePromptSubmit} className="flex-grow max-w-xl">
+    // Stack vertically on small screens, horizontally on medium+
+    <header className="p-4 border-b bg-white shadow-sm flex flex-col md:flex-row items-center">
+      {/* Add bottom margin when stacked, right margin when horizontal */}
+      <div className="text-xl font-bold text-blue-600 mb-2 md:mb-0 md:mr-6">Coffeelover</div>
+      {/* Full width when stacked, grow with max-width when horizontal */}
+      <form onSubmit={handlePromptSubmit} className="w-full md:flex-grow md:max-w-xl">
         <div className="flex">
           <input
             type="text"
