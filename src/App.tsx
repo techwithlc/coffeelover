@@ -142,8 +142,8 @@ function App() {
     // setAiFilteredShopIds(null); // No longer using this state
 
     try {
-      // New prompt: Expanded guardrails - check relevance for multiple locations
-      const allowedLocations = "Taichung (Taiwan), USA, Japan, Korea, Singapore, Hong Kong, Canada, or London (UK)";
+      // New prompt: Updated guardrails - allow all of Taiwan
+      const allowedLocations = "Taiwan, USA, Japan, Korea, Singapore, Hong Kong, Canada, or London (UK)"; // Changed Taichung (Taiwan) to Taiwan
       const structuredPrompt = `Analyze the following user request: "${prompt}".
 
 First, determine if the request is primarily about finding or asking about coffee shops, cafes, or related amenities (like wifi, opening hours, quietness) specifically within any of the following locations: ${allowedLocations}.
@@ -156,14 +156,14 @@ If the request IS NOT related to coffee shops in any of these allowed locations,
 
 If the request IS related to coffee shops in one of the allowed locations, respond ONLY with a JSON object containing the following keys:
 1. "related": true
-2. "keywords": A string of the key search terms. Include the location name (e.g., "Tokyo", "Vancouver", "Singapore") and any specific criteria like "open late", "quiet", "wifi". If the query is unclear but related, use the original query as keywords. Ensure the location is part of the keywords if mentioned or implied.
+2. "keywords": A string of the key search terms. Include the location name (e.g., "Taipei", "Tokyo", "Vancouver", "Singapore") and any specific criteria like "open late", "quiet", "wifi". If the query is unclear but related, use the original query as keywords. Ensure the location is part of the keywords if mentioned or implied (e.g., if asking about a specific district in Taiwan, include the city/Taiwan).
 3. "count": An integer representing the number of shops requested (e.g., 5, 10), or null if no specific number is mentioned.
 
-Example Request (Related): "Find 5 quiet cafes with wifi open after 10pm in Vancouver"
+Example Request (Related): "Find 5 quiet cafes with wifi open after 10pm in Taipei"
 Example JSON Response (Related):
 {
   "related": true,
-  "keywords": "quiet cafe wifi open after 10pm Vancouver",
+  "keywords": "quiet cafe wifi open after 10pm Taipei",
   "count": 5
 }
 
@@ -182,7 +182,7 @@ Example JSON Response (Unrelated):
   "message": "I can only help with questions about coffee shops in ${allowedLocations}."
 }`;
 
-      console.log("Sending structured prompt with expanded guardrails to AI:", structuredPrompt);
+      console.log("Sending structured prompt with updated guardrails to AI:", structuredPrompt);
       const result = await model.generateContent(structuredPrompt);
       const response = await result.response;
       const rawJsonResponse = response.text().trim();
