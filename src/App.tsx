@@ -7,12 +7,12 @@ import type { CoffeeShop } from './lib/types';
 // import { supabase } from './lib/supabaseClient'; // Removed unused import
 // import { mockFavorites } from './lib/mockData'; // Removed unused import
 import Header from './components/Header'; // Import Header
-import { GoogleGenerativeAI } from '@google/generative-ai'; // Import Gemini
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai'; // Import Gemini and GenerativeModel
 
 // Initialize Gemini AI Client outside component if API key is static
 const apiKeyGemini = import.meta.env.VITE_GEMINI_API_KEY;
 let genAI: GoogleGenerativeAI | null = null;
-let model: any = null; // Use 'any' or a more specific type if available
+let model: GenerativeModel | null = null; // Use specific GenerativeModel type
 if (apiKeyGemini) {
   genAI = new GoogleGenerativeAI(apiKeyGemini);
   model = genAI.getGenerativeModel({ model: "gemini-2.5-pro-exp-03-25"});
@@ -239,15 +239,17 @@ function App() {
         isGenerating={isGenerating}
         handlePromptSubmit={handlePromptSubmit}
       />
-      <div className="flex flex-1 overflow-hidden"> {/* Added wrapper for sidebar/map */}
+      <div className="flex flex-1 overflow-hidden"> {/* Wrapper for sidebar/map */}
+        {/* Sidebar: Hidden on small screens, flex column on medium+ */}
         <Sidebar
           locations={coffeeShops}
           onSelectLocation={handleSelectLocation}
-          className="w-96"
+          className="hidden md:flex w-96 flex-col" // Responsive classes applied
           // geminiResponse={geminiResponse} // AI text response not needed
           // aiFilteredShopIds={aiFilteredShopIds} // Removed prop
           // setAiFilteredShopIds={setAiFilteredShopIds} // Removed prop
         />
+        {/* Map container: Takes remaining space */}
         <div className="flex-1 relative">
           <Map
             locations={coffeeShops}
@@ -255,21 +257,22 @@ function App() {
             favoriteIds={favoriteIds}
             // aiFilteredShopIds={aiFilteredShopIds} // Removed prop
            />
+          {/* Location Details Overlay */}
           {selectedLocation && (
-          <LocationDetails
-            location={selectedLocation}
-            isFavorite={favoriteIds.has(selectedLocation.id)} // Pass isFavorite
-            onToggleFavorite={handleToggleFavorite} // Pass handler
-            onClose={() => setSelectedLocation(null)}
-          />
-        )}
-        {/* Loading Overlay moved inside map container */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-10">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-          </div>
-        )}
-        </div> {/* Close map wrapper */}
+            <LocationDetails
+              location={selectedLocation}
+              isFavorite={favoriteIds.has(selectedLocation.id)} // Pass isFavorite
+              onToggleFavorite={handleToggleFavorite} // Pass handler
+              onClose={() => setSelectedLocation(null)}
+            />
+          )}
+          {/* Loading Overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-10">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+            </div>
+          )}
+        </div> {/* Close map container */}
       </div> {/* Close sidebar/map flex wrapper */}
 
         {/* Toaster moved outside main div, but inside Fragment */}
