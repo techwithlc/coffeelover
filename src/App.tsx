@@ -430,6 +430,10 @@ Respond ONLY with JSON that strictly follows one of these formats:
 
         // Step 5: Update State & UI
     setCoffeeShops(finalShops);
+    // Center map on the first result if available
+    if (finalShops.length > 0 && finalShops[0].lat && finalShops[0].lng) {
+      setCurrentMapCenter({ lat: finalShops[0].lat, lng: finalShops[0].lng });
+    }
 
     // --- Refined Final User Messages ---
     // Dismiss the loading toast before showing the final status
