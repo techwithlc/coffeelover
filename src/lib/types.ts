@@ -24,12 +24,12 @@ export interface CoffeeShop {
   lat?: number;
   lng?: number;
   opening_hours?: OpeningHours; // Use the detailed type
+  price_range?: string;
+  wifi_available?: boolean; // Already existed, ensure it's used
+  pet_friendly?: boolean; // Already existed, ensure it's used
+  charging_available?: boolean; // New: For filtering by charging options
   description?: string;
   rating?: number;
-  price_range?: string;
-  wifi_available?: boolean;
-  pet_friendly?: boolean;
-  has_power_outlets?: boolean;
   menu_highlights?: string[];
   images?: string[];
   created_at?: string;

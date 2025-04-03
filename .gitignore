@@ -11,7 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
-.env # Add .env to explicitly ignore it
+.env*
+!.env.example
 
 # Editor directories and files
 .vscode/*
