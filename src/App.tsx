@@ -286,19 +286,33 @@ function App() {
         const finalShops = requestedCount !== null ? detailedShops.slice(0, requestedCount) : detailedShops;
 
         // Step 5: Update State & UI
-        setCoffeeShops(finalShops);
+    setCoffeeShops(finalShops);
 
-        // Refine final user messages based on filtering/counting
-        if (finalShops.length === 0) {
-            const msg = needsFiltering ? `No shops found matching "${keyword}" and criteria.` : `No results found for "${keyword}".`;
-            toast.success(msg, { id: loadingToastId });
-        } else if (requestedCount !== null && detailedShops.length < requestedCount) {
-            const msg = needsFiltering ? `Displaying ${detailedShops.length} shop(s) matching criteria (less than requested ${requestedCount}).` : `Found ${finalShops.length} result(s) for "${keyword}" (less than requested ${requestedCount}).`;
-            toast.success(msg, { id: loadingToastId });
-        } else if (loadingToastId && !needsFiltering) {
-             toast.success(`Displaying ${finalShops.length} result(s) for "${keyword}".`, { id: loadingToastId });
-        }
-        // If filtering happened and count was met/not specified, the "Found X shops matching criteria" toast is sufficient.
+    // --- Refined Final User Messages ---
+    // Dismiss the loading toast before showing the final status
+    if (loadingToastId) toast.dismiss(loadingToastId);
+
+    if (finalShops.length === 0) {
+      // No results found, either initially or after filtering
+      const reason = needsFiltering ? "matching criteria" : "for your search";
+      toast.success(`No shops found ${reason}.`);
+    } else if (requestedCount !== null) {
+      // A specific count was requested
+      if (finalShops.length < requestedCount) {
+        // Fewer results shown than requested
+        const reason = needsFiltering
+          ? `Only ${finalShops.length} shop(s) matched the criteria (requested ${requestedCount}).`
+          : `Only found ${finalShops.length} result(s) for "${keyword}" (requested ${requestedCount}).`;
+        toast.success(reason);
+      } else {
+        // Exact count requested was found and shown
+        toast.success(`Displaying ${finalShops.length} shop(s) as requested.`);
+      }
+    } else {
+      // No specific count requested, just show how many were found
+      const afterFiltering = needsFiltering ? " matching criteria" : "";
+      toast.success(`Displaying ${finalShops.length} shop(s)${afterFiltering}.`);
+    }
 
     } catch (error) {
         // Catch errors during details fetching or filtering
