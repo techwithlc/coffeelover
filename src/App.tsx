@@ -25,11 +25,11 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
   // Combine base fields with required fields, removing duplicates
   const uniqueFields = Array.from(new Set([BASE_DETAIL_FIELDS, ...requiredFields])).join(',');
 
-  const apiUrl = `/maps-api/place/details/json?place_id=${placeId}&fields=${uniqueFields}`;
+  const apiUrl = "/maps-api/place/details/json?place_id=" + placeId + "&fields=" + uniqueFields;
 
   try {
     const response = await fetch(apiUrl);
-    if (!response.ok) throw new Error(`Place Details API HTTP error! status: ${response.status}`);
+    if (!response.ok) throw new Error("Place Details API HTTP error! status: " + response.status);
     const data: PlaceDetailsResponse = await response.json();
 
     if (data.status === 'OK' && data.result) {
@@ -60,11 +60,11 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
         menu_highlights: [], // Example: parse reviews if requested
       };
     } else {
-      console.error(`Place Details API Error for ${placeId}: ${data.status} - ${data.error_message || ''}`);
+      console.error("Place Details API Error for " + placeId + ": " + data.status + " - " + (data.error_message || ''));
       return null;
     }
   } catch (error) {
-    console.error(`Failed to fetch details for ${placeId}:`, error);
+    console.error("Failed to fetch details for " + placeId + ":", error);
     return null;
   }
 }
@@ -81,7 +81,7 @@ function App() {
 
     try {
       // Removed unused allowedLocations variable
-      const promptForAI = `You understand natural language queries about finding coffee shops.
+      const promptForAI = "You understand natural language queries about finding coffee shops.";
       // ... (rest of the code remains the same)
       if (parsedResponse.related === true) {
         aiResponseRelated = true; // Mark as related to handle finally block correctly
@@ -122,7 +122,7 @@ function App() {
       !aiFilters.menuItem &&
       !aiFilters.quality;
 
-    const nearbySearchUrl = `/maps-api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&keyword=${encodeURIComponent(keyword)}${useOpenNowParam ? '&opennow=true' : ''}`;
+    const nearbySearchUrl = "/maps-api/place/nearbysearch/json?location=" + lat + "," + lng + "&radius=" + radius + "&type=" + type + "&keyword=" + encodeURIComponent(keyword) + (useOpenNowParam ? '&opennow=true' : '');
     console.log("Nearby Search URL:", nearbySearchUrl); // Log the search URL
     // ... (rest of the code remains the same)
     // Step 2 & 3: Fetch Details & Filter
@@ -154,7 +154,7 @@ function App() {
         const detailedResults = await Promise.all(detailPromises);
         const validDetailedShops = detailedResults.filter(shop => shop !== null) as CoffeeShop[];
 
-        console.log(`Fetched details for ${validDetailedShops.length} / ${candidateShops.length} shops.`);
+        console.log("Fetched details for " + validDetailedShops.length + " / " + candidateShops.length + " shops.");
 
         // Apply ALL AI filters now that we have details (or simulated details)
         processedShops = aiFilters ? filterShopsByCriteria(validDetailedShops, aiFilters) : validDetailedShops;
@@ -162,7 +162,7 @@ function App() {
         // Use custom render for closable toast
         toast.success((t) => (
           <span>
-            Found ${processedShops.length} shop(s) after detailed check.
+            Found {processedShops.length} shop(s) after detailed check.
             <button onClick={() => toast.dismiss(t.id)} style={{ marginLeft: '10px', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}>X</button>
           </span>
         ), { id: loadingToastId });
@@ -188,7 +188,7 @@ function App() {
         // Use custom render for closable toast
         toast.success((t) => (
           <span>
-            Found ${processedShops.length} initial result(s).
+            Found {processedShops.length} initial result(s).
             <button onClick={() => toast.dismiss(t.id)} style={{ marginLeft: '10px', border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}>X</button>
           </span>
         ), { id: loadingToastId });
@@ -201,4 +201,12 @@ function App() {
 
       // Step 5: Update State & Provide Feedback
       setCoffeeShops(finalShops);
-      // ... (rest of the code remains the same)
+    } catch (error) {
+      console.error('Error processing search:', error);
+      if (loadingToastId) {
+        toast.update(loadingToastId, { render: "Search failed. Please try again.", type: "error", isLoading: false, autoClose: 5000, closeButton: true });
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
