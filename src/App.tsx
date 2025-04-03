@@ -221,13 +221,13 @@ function App() {
         let message = "Failed to get location.";
         switch (error.code) {
           case error.PERMISSION_DENIED: message = "Location permission denied."; break;
-          case error.POSITION_UNAVAILABLE: message = "Location info unavailable."; break;
+          case error.POSITION_UNAVAILABLE: message = "Location information is currently unavailable."; break; // Slightly more specific
           case error.TIMEOUT: message = "Location request timed out."; break;
         }
         toast.error((t) => renderClosableToast(message, t, 'error'), { id: loadingToast });
         setUserLocation(null);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 } // Set enableHighAccuracy to false
     );
   }, []);
 
