@@ -479,6 +479,16 @@ Respond ONLY with JSON that strictly follows one of these formats:
     setSelectedLocation(location);
   };
 
+  // Handler for resetting the search state
+  const handleResetSearch = () => {
+    setPrompt('');
+    setCoffeeShops([]); // Clear results
+    setSelectedLocation(null); // Clear selected details
+    // Optionally, re-fetch initial data or just leave it blank
+    // fetchInitialData(); // Uncomment to reload initial nearby shops
+    toast('Search reset.');
+  };
+
   return (
     <>
       <div className="flex flex-col h-screen">
@@ -490,6 +500,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
           handlePromptSubmit={handlePromptSubmit}
           requestLocation={requestLocation}
           hasLocation={!!userLocation} // Pass boolean indicating if location is available
+          onLogoClick={handleResetSearch} // Pass the reset handler
         />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar locations={coffeeShops} onSelectLocation={handleSelectLocation} className="hidden md:flex w-96 flex-col" />

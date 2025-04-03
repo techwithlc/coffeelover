@@ -8,6 +8,7 @@ interface HeaderProps {
   handlePromptSubmit: (e: React.FormEvent) => Promise<void>;
   requestLocation: () => void; // Function to request location
   hasLocation: boolean; // Indicates if location is available
+  onLogoClick: () => void; // Function to handle logo click
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -17,12 +18,20 @@ const Header: React.FC<HeaderProps> = ({
   handlePromptSubmit,
   requestLocation,
   hasLocation,
+  onLogoClick,
 }) => {
   return (
     // Stack vertically on small screens, horizontally on medium+
     <header className="p-4 border-b bg-white shadow-sm flex flex-col md:flex-row items-center gap-4"> {/* Added gap */}
-      {/* Logo */}
-      <div className="text-xl font-bold text-blue-600">Coffeelover</div>
+      {/* Logo Button */}
+      <button
+        type="button"
+        onClick={onLogoClick}
+        className="text-xl font-bold text-blue-600 hover:text-blue-800 focus:outline-none"
+        title="Reset Search"
+      >
+        Coffeelover
+      </button>
 
       {/* Search Form - takes remaining space */}
       <form onSubmit={handlePromptSubmit} className="flex-grow w-full md:w-auto">
