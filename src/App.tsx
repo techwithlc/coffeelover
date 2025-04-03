@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useCallback } from 'react';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import LocationDetails from './components/LocationDetails';
@@ -31,24 +31,39 @@ interface PlaceDetailsResult {
 interface PlacesNearbyResponse { results: PlaceResult[]; status: string; error_message?: string; next_page_token?: string; }
 interface PlaceDetailsResponse { result?: PlaceDetailsResult; status: string; error_message?: string; }
 
-// AI Response Types
-interface AiFilters { openAfter?: string; wifi?: boolean; }
-type AiResponse = | { related: true; keywords: string; count: number | null; filters: AiFilters | null } | { related: false; message: string };
+// AI Response Types - Added openNow
+interface AiFilters { openAfter?: string; wifi?: boolean; openNow?: boolean; }
+type AiResponse = | { related: true; keywords: string; count: number | null; filters: AiFilters | null } | { related: false; message: string; suggestion?: string }; // Added optional suggestion
 
 // --- Helper Function for Filtering ---
 const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters): CoffeeShop[] => {
+  // No filters? Return all shops.
+  if (!filters || Object.keys(filters).length === 0) {
+    return shops;
+  }
+
   return shops.filter(shop => {
-    let matches = true;
+    // Check openNow filter (only if requested and details were fetched)
+    // Note: If useOpenNowParam was true in handleKeywordSearch, the API already filtered.
+    // This client-side check is for when details had to be fetched for other reasons (like openAfter).
+    if (filters.openNow === true) {
+      // Requires opening_hours and open_now to be explicitly true from Details API
+      if (shop.opening_hours?.open_now !== true) {
+        return false; // Doesn't match if not explicitly open now according to details
+      }
+    }
+
+    // Check openAfter filter (always requires details fetch)
     if (filters.openAfter) {
       if (!shop.opening_hours || !Array.isArray(shop.opening_hours.periods) || shop.opening_hours.periods.length === 0) {
-        matches = false;
+        return false; // Cannot determine opening times
       } else {
-        const [filterHour, filterMinute] = filters.openAfter.split(':').map(Number);
-        if (isNaN(filterHour) || isNaN(filterMinute)) {
-           console.warn(`Invalid openAfter time format: ${filters.openAfter}`);
-           matches = false;
-        } else {
-            const filterTimeMinutes = filterHour * 60 + filterMinute;
+         const [filterHour, filterMinute] = filters.openAfter.split(':').map(Number);
+         if (isNaN(filterHour) || isNaN(filterMinute)) {
+            console.warn(`Invalid openAfter time format: ${filters.openAfter}`);
+            return false; // Corrected: Exit early if format is invalid
+         } else {
+             const filterTimeMinutes = filterHour * 60 + filterMinute;
             // Add explicit type for period
             const isOpenLateEnough = shop.opening_hours.periods.some((period: OpeningHoursPeriod) => {
                if (period?.close?.time && /^\d{4}$/.test(period.close.time)) {
@@ -63,12 +78,22 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters): CoffeeS
                if (!period.close && period.open?.time === '0000') return true; // 24/7 case
                return false;
             });
-            if (!isOpenLateEnough) matches = false;
+            if (!isOpenLateEnough) return false; // Doesn't match if not open late enough
         }
       }
     }
-    // Add other filters like wifi here if needed
-    return matches;
+
+    // Check wifi filter (requires details fetch and a field we haven't added yet)
+    if (filters.wifi === true) {
+       // TODO: Implement wifi check if/when wifi data is fetched and stored in CoffeeShop type
+       // Example: if (shop.wifi_available !== true) return false;
+       console.warn("Wifi filtering requested but not implemented yet.");
+       // For now, let's assume it doesn't match if wifi is requested but not implemented
+       // return false;
+    }
+
+    // If we passed all checks, keep the shop
+    return true;
   });
 };
 
@@ -81,6 +106,48 @@ function App() {
   const [mapCenter] = useState({ lat: 24.1477, lng: 120.6736 });
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false); // Specifically for AI interaction
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null); // User's current location
+
+  // Function to request user's location
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser.");
+      return;
+    }
+
+    const loadingToast = toast.loading("Getting your location...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        toast.success("Location found!", { id: loadingToast });
+        // Optionally trigger a search based on the new location here
+        // handleKeywordSearch(`coffee near me`, null, null, undefined, { lat: latitude, lng: longitude });
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        let message = "Failed to get location.";
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            message = "Location permission denied. Please enable it in your browser settings.";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            message = "Location information is unavailable.";
+            break;
+          case error.TIMEOUT:
+            message = "Location request timed out.";
+            break;
+        }
+        toast.error(message, { id: loadingToast });
+        setUserLocation(null); // Ensure location is null on error
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000, // 10 seconds
+        maximumAge: 0 // Force fresh location
+      }
+    );
+  }, []); // Empty dependency array as it uses browser API and toast
 
   // Effect for initial data load
   useEffect(() => {
@@ -133,8 +200,12 @@ function App() {
   // Handler for AI Prompt Submit
   const handlePromptSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || !model) {
-      toast.error(!model ? "AI model not initialized." : "Please enter a prompt.");
+    if (!prompt.trim()) {
+       toast.error("Please enter what you're looking for.");
+       return;
+    }
+    if (!model) {
+      toast.error("AI assistant is not available right now.");
       return;
     }
 
@@ -144,7 +215,21 @@ function App() {
 
     try {
       const allowedLocations = "Taiwan, USA, Japan, Korea, Singapore, Hong Kong, Canada, or London (UK)";
-      const structuredPrompt = `Analyze the user request: "${prompt}". Check if it's about coffee shops in ${allowedLocations}. Respond ONLY with JSON. If related: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "wifi": bool|null}|null}. If unrelated: {"related": false, "message": "I can only help with coffee shops in ${allowedLocations}."}. For "openAfter", use latest time mentioned (e.g., 10pm -> 22:00). Assume "late" means 21:00 if no time specified. Include location in keywords.`;
+      // Updated prompt to include openNow and suggestions
+      const structuredPrompt = `Analyze the user request: "${prompt}".
+Is it about finding coffee shops/cafes in ${allowedLocations}?
+Respond ONLY with JSON that strictly follows one of these formats:
+1. If related: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "wifi": bool|null, "openNow": bool|null}|null}
+   - Extract relevant keywords (e.g., "quiet cafe Taipei", "coffee near Central Park"). Include location if mentioned.
+   - If the user asks for places open "now", "currently", or similar, set "openNow": true.
+   - If the user asks for places open after a specific time (e.g., "after 10pm", "late night"), extract the time as HH:MM (24h format) for "openAfter". Assume "late" means 21:00 if no specific time. "openNow" and "openAfter" can coexist if the request implies both (e.g., "open now and after 10pm").
+   - Extract a specific number if requested (e.g., "find 3 cafes") for "count".
+   - Extract boolean filter for "wifi" if mentioned.
+2. If unrelated or too ambiguous: {"related": false, "message": "...", "suggestion": "..."|null}
+   - If unrelated to coffee shops in allowed locations, use message: "I can only help with coffee shops in ${allowedLocations}."
+   - If it seems coffee-related but is too vague (e.g., "good coffee"), use message: "Could you be more specific? e.g., 'cafes near me with wifi', 'quiet coffee shop in downtown'." and optionally add a suggestion like "Maybe try searching for 'coffee shops near me'?"
+   - If it's coffee-related but asks for something impossible (e.g., specific bean type), use message: "I can search by location, opening hours, and wifi, but not specific bean types yet." and optionally suggest a broader search.`;
+
 
       console.log("Sending prompt to AI:", structuredPrompt);
       loadingToastId = toast.loading("Asking AI assistant...");
@@ -161,17 +246,32 @@ function App() {
         const jsonString = jsonMatch[1] || jsonMatch[2];
         const tempParsed = JSON.parse(jsonString);
 
-        // Validate structure
-        if (tempParsed.related === true && typeof tempParsed.keywords === 'string' && (tempParsed.count === null || typeof tempParsed.count === 'number') && (tempParsed.filters === null || typeof tempParsed.filters === 'object')) {
-          if (tempParsed.filters?.openAfter && !/^\d{2}:\d{2}$/.test(tempParsed.filters.openAfter)) throw new Error("Invalid 'openAfter' format.");
-          parsedResponse = tempParsed as AiResponse;
-        } else if (tempParsed.related === false && typeof tempParsed.message === 'string' && tempParsed.message.includes("I can only help with questions about coffee shops in")) {
-          parsedResponse = tempParsed as AiResponse;
-        } else { throw new Error("Invalid JSON structure."); }
+        // Validate structure more thoroughly
+        if (tempParsed.related === true) {
+            if (typeof tempParsed.keywords !== 'string' || !tempParsed.keywords.trim()) throw new Error("Missing or empty 'keywords'.");
+            if (tempParsed.count !== null && typeof tempParsed.count !== 'number') throw new Error("Invalid 'count' format.");
+            if (tempParsed.filters !== null && typeof tempParsed.filters !== 'object') throw new Error("Invalid 'filters' format.");
+            if (tempParsed.filters) {
+                if (tempParsed.filters.openAfter && (typeof tempParsed.filters.openAfter !== 'string' || !/^\d{2}:\d{2}$/.test(tempParsed.filters.openAfter))) throw new Error("Invalid 'openAfter' format.");
+                if (tempParsed.filters.wifi !== null && typeof tempParsed.filters.wifi !== 'boolean') throw new Error("Invalid 'wifi' format.");
+                if (tempParsed.filters.openNow !== null && typeof tempParsed.filters.openNow !== 'boolean') throw new Error("Invalid 'openNow' format.");
+            }
+            parsedResponse = tempParsed as AiResponse;
+        } else if (tempParsed.related === false) {
+            if (typeof tempParsed.message !== 'string' || !tempParsed.message.trim()) throw new Error("Missing or empty 'message' for unrelated response.");
+            if (tempParsed.suggestion !== undefined && tempParsed.suggestion !== null && typeof tempParsed.suggestion !== 'string') throw new Error("Invalid 'suggestion' format.");
+             // Ensure message contains expected text for location restriction
+             if (!tempParsed.message.includes("I can only help with") && !tempParsed.message.includes("Could you be more specific?") && !tempParsed.message.includes("I can search by location")) {
+                throw new Error("Unrelated message content is unexpected.");
+             }
+            parsedResponse = tempParsed as AiResponse;
+        } else {
+            throw new Error("Invalid JSON structure: 'related' field missing or invalid.");
+        }
       } catch (parseError) {
         console.error("AI response parsing/validation failed:", parseError, "Raw:", rawJsonResponse);
-        toast.error("Received an unexpected response from the AI.", { id: loadingToastId });
-        setIsGenerating(false); // Stop loading here on parse error
+        toast.error("Received an unexpected or invalid response from the AI.", { id: loadingToastId });
+        setIsGenerating(false);
         return;
       }
 
@@ -179,18 +279,34 @@ function App() {
       if (parsedResponse.related === true) {
         aiResponseRelated = true; // Mark as related to handle finally block correctly
         const { keywords, count, filters } = parsedResponse;
-        if (keywords) {
-          const searchMessage = `Searching for ${keywords}` + (count ? ` (limit ${count})` : '');
+        // Keywords should be validated already, but double-check trim
+        if (keywords.trim()) {
+          let searchMessage = `Searching for ${keywords.trim()}`;
+          if (filters?.openNow) searchMessage += " (open now)";
+          if (filters?.openAfter) searchMessage += ` (open after ${filters.openAfter})`;
+          if (filters?.wifi) searchMessage += " (with wifi)";
+          if (count) searchMessage += ` (limit ${count})`;
+
           toast.loading(searchMessage, { id: loadingToastId });
-          await handleKeywordSearch(keywords, count, filters, loadingToastId); // Pass toast ID
+          await handleKeywordSearch(keywords.trim(), count, filters, loadingToastId); // Pass toast ID
         } else {
-          toast.error("AI didn't provide keywords.", { id: loadingToastId });
-          setIsGenerating(false); // Stop loading as search won't proceed
+          // This case should ideally be caught by validation, but handle defensively
+          toast.error("AI didn't provide valid keywords.", { id: loadingToastId });
+          setIsGenerating(false);
         }
       } else {
-        const { message } = parsedResponse;
-        console.log("AI determined query unrelated:", message);
-        toast.error(message, { id: loadingToastId });
+        // Handle unrelated/ambiguous cases
+        const { message, suggestion } = parsedResponse;
+        console.log("AI determined query unrelated/ambiguous:", message, suggestion);
+        // Show the primary message from AI
+        toast.error(message, { id: loadingToastId, duration: 5000 }); // Longer duration for reading
+        // If there's a suggestion, maybe offer it in a different way?
+        // For now, just logging it. Could potentially add a button or follow-up prompt.
+        if (suggestion) {
+            console.log("AI Suggestion:", suggestion);
+            // Example: Could show another toast or modify UI
+            // toast.info(`Suggestion: ${suggestion}`, { duration: 6000 });
+        }
         // No search started, so set generating false in finally
       }
 
@@ -209,8 +325,14 @@ function App() {
     }
   };
 
-  // Handler for keyword search
-  const handleKeywordSearch = async (keyword: string, requestedCount: number | null = null, filters: AiFilters | null = null, loadingToastId?: string) => {
+  // Handler for keyword search (now accepts optional location override)
+  const handleKeywordSearch = async (
+    keyword: string,
+    requestedCount: number | null = null,
+    filters: AiFilters | null = null,
+    loadingToastId?: string,
+    locationOverride?: { lat: number; lng: number } // Optional location
+  ) => {
     setIsLoading(true); // Use main loading overlay for search process
     setCoffeeShops([]);
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -220,11 +342,23 @@ function App() {
     }
 
     let candidateShops: PlaceResult[] = [];
+    // Determine location to use: override > userLocation > mapCenter
+    const searchLocation = locationOverride ?? userLocation ?? mapCenter;
+    // Determine if we can use the efficient 'opennow' parameter
+    const useOpenNowParam = filters?.openNow === true && !filters.openAfter && !filters.wifi; // Only use if 'openNow' is the sole filter
+
     try {
-      // Step 1: Initial Text Search
-      const textSearchUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${mapCenter.lat},${mapCenter.lng}&radius=10000`;
-      const response = await fetch(textSearchUrl);
-      if (!response.ok) throw new Error(`Text Search HTTP error! status: ${response.status}`);
+      // Step 1: Initial Search (NearbySearch might be better for simple "near me" + openNow)
+      let searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${searchLocation.lat},${searchLocation.lng}&radius=10000`;
+      if (useOpenNowParam) {
+         searchApiUrl += '&opennow=true';
+         console.log("Using opennow=true parameter in Text Search");
+      }
+      // TODO: Consider using Nearby Search API if keywords are simple like "cafe" or "coffee shop" + openNow filter for potentially better relevance?
+      // Example: if (keyword.toLowerCase().includes('near me') && useOpenNowParam) { searchApiUrl = `/maps-api/place/nearbysearch/json?location=...&rankby=distance&keyword=cafe&opennow=true`; }
+
+      const response = await fetch(searchApiUrl);
+      if (!response.ok) throw new Error(`Search API HTTP error! status: ${response.status}`);
       const data: PlacesNearbyResponse = await response.json();
       if (data.status === 'OK') { candidateShops = data.results; }
       else if (data.status === 'ZERO_RESULTS') {
@@ -240,13 +374,15 @@ function App() {
 
     // Step 2 & 3: Fetch Details & Filter
     let detailedShops: CoffeeShop[] = [];
-    const needsFiltering = filters && Object.keys(filters).length > 0;
+    // Determine if we *still* need to fetch details (e.g., for openAfter, wifi, or if openNow wasn't the only filter)
+    const needsDetailsFetch = filters && (!!filters.openAfter || !!filters.wifi || (filters.openNow && !useOpenNowParam));
 
     try {
-        if (needsFiltering) {
+        if (needsDetailsFetch) {
            toast.loading('Fetching details for filtering...', { id: loadingToastId });
            const detailPromises = candidateShops.map(async (candidate) => {
-             const fields = 'place_id,name,geometry,vicinity,rating,opening_hours,formatted_address'; // Added formatted_address
+             // Ensure opening_hours is requested if openAfter or openNow filtering is needed client-side
+             const fields = `place_id,name,geometry,vicinity,rating,formatted_address${(filters.openAfter || (filters.openNow && !useOpenNowParam)) ? ',opening_hours' : ''}`;
              const detailsApiUrl = `/maps-api/place/details/json?placeid=${candidate.place_id}&fields=${fields}`;
              try {
                const detailsResponse = await fetch(detailsApiUrl);
@@ -270,10 +406,12 @@ function App() {
            });
            const results = await Promise.all(detailPromises);
            const validDetailedShops = results.filter((shop): shop is CoffeeShop => shop !== null);
-           detailedShops = filterShopsByCriteria(validDetailedShops, filters); // Apply filters
-           toast.success(`Found ${detailedShops.length} shop(s) matching criteria.`, { id: loadingToastId });
+           // Apply client-side filtering if needed (openAfter, wifi, or openNow if not handled by API)
+           detailedShops = filterShopsByCriteria(validDetailedShops, filters);
+           const filterDesc = filters.openAfter ? ` open after ${filters.openAfter}` : (filters.openNow ? " open now" : "");
+           toast.success(`Found ${detailedShops.length} shop(s) matching criteria${filterDesc}.`, { id: loadingToastId });
         } else {
-          // No filters, map basic data
+          // No details fetch needed, map basic data directly from initial search results
           detailedShops = candidateShops.map(place => ({
             id: place.place_id, name: place.name, lat: place.geometry.location.lat, lng: place.geometry.location.lng,
             address: place.vicinity, rating: place.rating, opening_hours: undefined, price_range: undefined,
@@ -294,13 +432,13 @@ function App() {
 
     if (finalShops.length === 0) {
       // No results found, either initially or after filtering
-      const reason = needsFiltering ? "matching criteria" : "for your search";
+      const reason = needsDetailsFetch ? "matching criteria" : "for your search"; // Use needsDetailsFetch
       toast.success(`No shops found ${reason}.`);
     } else if (requestedCount !== null) {
       // A specific count was requested
       if (finalShops.length < requestedCount) {
         // Fewer results shown than requested
-        const reason = needsFiltering
+        const reason = needsDetailsFetch // Use needsDetailsFetch
           ? `Only ${finalShops.length} shop(s) matched the criteria (requested ${requestedCount}).`
           : `Only found ${finalShops.length} result(s) for "${keyword}" (requested ${requestedCount}).`;
         toast.success(reason);
@@ -310,7 +448,7 @@ function App() {
       }
     } else {
       // No specific count requested, just show how many were found
-      const afterFiltering = needsFiltering ? " matching criteria" : "";
+      const afterFiltering = needsDetailsFetch ? " matching criteria" : ""; // Use needsDetailsFetch
       toast.success(`Displaying ${finalShops.length} shop(s)${afterFiltering}.`);
     }
 
@@ -344,7 +482,15 @@ function App() {
   return (
     <>
       <div className="flex flex-col h-screen">
-        <Header prompt={prompt} setPrompt={setPrompt} isGenerating={isGenerating} handlePromptSubmit={handlePromptSubmit} />
+        {/* Pass location state and request function to Header */}
+        <Header
+          prompt={prompt}
+          setPrompt={setPrompt}
+          isGenerating={isGenerating}
+          handlePromptSubmit={handlePromptSubmit}
+          requestLocation={requestLocation}
+          hasLocation={!!userLocation} // Pass boolean indicating if location is available
+        />
         <div className="flex flex-1 overflow-hidden">
           <Sidebar locations={coffeeShops} onSelectLocation={handleSelectLocation} className="hidden md:flex w-96 flex-col" />
           <div className="flex-1 relative">

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
+    "@heroicons/react": "^2.2.0",
     "@react-google-maps/api": "^2.19.3",
     "@supabase/supabase-js": "^2.39.7",
     "lucide-react": "^0.344.0",

@@ -1,10 +1,13 @@
 import React from 'react';
+import { MapPinIcon } from '@heroicons/react/24/outline'; // Using Heroicons for the location icon
 
 interface HeaderProps {
   prompt: string;
   setPrompt: (value: string) => void;
   isGenerating: boolean;
   handlePromptSubmit: (e: React.FormEvent) => Promise<void>;
+  requestLocation: () => void; // Function to request location
+  hasLocation: boolean; // Indicates if location is available
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -12,23 +15,39 @@ const Header: React.FC<HeaderProps> = ({
   setPrompt,
   isGenerating,
   handlePromptSubmit,
+  requestLocation,
+  hasLocation,
 }) => {
   return (
     // Stack vertically on small screens, horizontally on medium+
-    <header className="p-4 border-b bg-white shadow-sm flex flex-col md:flex-row items-center">
-      {/* Add bottom margin when stacked, right margin when horizontal */}
-      <div className="text-xl font-bold text-blue-600 mb-2 md:mb-0 md:mr-6">Coffeelover</div>
-      {/* Full width when stacked, grow with max-width when horizontal */}
-      <form onSubmit={handlePromptSubmit} className="w-full md:flex-grow md:max-w-xl">
-        <div className="flex">
+    <header className="p-4 border-b bg-white shadow-sm flex flex-col md:flex-row items-center gap-4"> {/* Added gap */}
+      {/* Logo */}
+      <div className="text-xl font-bold text-blue-600">Coffeelover</div>
+
+      {/* Search Form - takes remaining space */}
+      <form onSubmit={handlePromptSubmit} className="flex-grow w-full md:w-auto">
+        <div className="flex items-center">
+          {/* Location Button */}
+          <button
+            type="button"
+            onClick={requestLocation}
+            title={hasLocation ? "Location acquired" : "Use current location"}
+            className={`p-2 mr-2 rounded border ${hasLocation ? 'bg-green-100 border-green-300 text-green-700' : 'bg-gray-100 border-gray-300 text-gray-600'} hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300`}
+            disabled={isGenerating} // Disable while AI is working
+          >
+            <MapPinIcon className="h-5 w-5" />
+          </button>
+
+          {/* Prompt Input */}
           <input
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Ask Coffeelover about coffee shops..."
+            placeholder="Coffee shops near me, open late..." // Updated placeholder
             className="flex-grow p-2 border border-r-0 rounded-l focus:outline-none focus:ring-2 focus:ring-blue-300"
             disabled={isGenerating}
           />
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={isGenerating}
