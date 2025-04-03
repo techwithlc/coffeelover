@@ -1,8 +1,14 @@
-# Coffee Lover - Taichung Coffee Shop Finder
+# Coffee Lover - Coffee Shop Finder
 
-Coffee Lover is an interactive web application designed for discovering, exploring, and reviewing coffee shops in Taichung, Taiwan. Built with modern web technologies, it provides a seamless user experience for finding the perfect cafe.
+Coffee Lover is an interactive web application designed for discovering, exploring, and reviewing coffee shops. Built with modern web technologies, it provides a seamless user experience for finding the perfect cafe.
 
-The application leverages React, TypeScript, and Vite for a fast and type-safe frontend development experience, styled with Tailwind CSS. It integrates with the Google Maps API for interactive mapping and Supabase for backend services (currently utilizing mock data for demonstration and development purposes).
+## Live Demo
+
+**Check out the live website:** [**coffeelover.fun**](https://coffeelover.fun)
+
+---
+
+The application leverages React, TypeScript, and Vite for a fast and type-safe frontend development experience, styled with Tailwind CSS. It integrates with the Google Maps API for interactive mapping and uses the Google Places API for shop data. Favorites are stored locally, and an AI assistant (powered by Google Gemini) helps with natural language searches across multiple regions.
 
 ## Features
 
