@@ -88,9 +88,9 @@ function App() {
         const { keywords, count, filters } = parsedResponse;
         if (keywords.trim()) {
           // Construct search message (logic remains the same)
-          let searchMessage = `Searching for ${keywords.trim()}`;
+          let searchMessage = "Searching for " + keywords.trim();
           if (filters?.openNow) searchMessage += " (open now)";
-          if (filters?.openAfter) searchMessage += ` (open after ${filters.openAfter})`;
+          if (filters?.openAfter) searchMessage += " (open after " + filters.openAfter + ")";
           // ... (rest of the code remains the same)
   // --- Main Search and Filtering Logic ---
   const handleKeywordSearch = async (
