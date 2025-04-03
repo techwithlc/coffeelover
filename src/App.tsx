@@ -142,38 +142,47 @@ function App() {
     // setAiFilteredShopIds(null); // No longer using this state
 
     try {
-      // New prompt: Add guardrails - check relevance first, then extract keywords/count
+      // New prompt: Expanded guardrails - check relevance for multiple locations
+      const allowedLocations = "Taichung (Taiwan), USA, Japan, Korea, Singapore, Hong Kong, Canada, or London (UK)";
       const structuredPrompt = `Analyze the following user request: "${prompt}".
 
-First, determine if the request is primarily about finding or asking about coffee shops, cafes, or related amenities (like wifi, opening hours, quietness) specifically within Taichung, Taiwan.
+First, determine if the request is primarily about finding or asking about coffee shops, cafes, or related amenities (like wifi, opening hours, quietness) specifically within any of the following locations: ${allowedLocations}.
 
-If the request IS NOT related to coffee shops in Taichung, respond ONLY with the following JSON object:
+If the request IS NOT related to coffee shops in any of these allowed locations, respond ONLY with the following JSON object:
 {
   "related": false,
-  "message": "I can only help with questions about coffee shops in Taichung."
+  "message": "I can only help with questions about coffee shops in ${allowedLocations}."
 }
 
-If the request IS related to coffee shops in Taichung, respond ONLY with a JSON object containing the following keys:
+If the request IS related to coffee shops in one of the allowed locations, respond ONLY with a JSON object containing the following keys:
 1. "related": true
-2. "keywords": A string of the key search terms. Include terms like "open late", "quiet", "wifi", "Taichung", etc. If the query is unclear but related, use the original query as keywords.
+2. "keywords": A string of the key search terms. Include the location name (e.g., "Tokyo", "Vancouver", "Singapore") and any specific criteria like "open late", "quiet", "wifi". If the query is unclear but related, use the original query as keywords. Ensure the location is part of the keywords if mentioned or implied.
 3. "count": An integer representing the number of shops requested (e.g., 5, 10), or null if no specific number is mentioned.
 
-Example Request (Related): "Find 5 quiet cafes with wifi open after 10pm in Taichung"
+Example Request (Related): "Find 5 quiet cafes with wifi open after 10pm in Vancouver"
 Example JSON Response (Related):
 {
   "related": true,
-  "keywords": "quiet cafe wifi open after 10pm Taichung",
+  "keywords": "quiet cafe wifi open after 10pm Vancouver",
   "count": 5
 }
 
-Example Request (Unrelated): "What's the weather like today?"
+Example Request (Related): "Coffee shops near Shibuya station"
+Example JSON Response (Related):
+{
+  "related": true,
+  "keywords": "Coffee shops near Shibuya station Tokyo", // Add implied location if possible
+  "count": null
+}
+
+Example Request (Unrelated): "Best restaurants in Paris"
 Example JSON Response (Unrelated):
 {
   "related": false,
-  "message": "I can only help with questions about coffee shops in Taichung."
+  "message": "I can only help with questions about coffee shops in ${allowedLocations}."
 }`;
 
-      console.log("Sending structured prompt with guardrails to AI:", structuredPrompt);
+      console.log("Sending structured prompt with expanded guardrails to AI:", structuredPrompt);
       const result = await model.generateContent(structuredPrompt);
       const response = await result.response;
       const rawJsonResponse = response.text().trim();
@@ -194,15 +203,23 @@ Example JSON Response (Unrelated):
            const jsonString = jsonMatch[1] || jsonMatch[2]; // Get content from code block or direct object
            const tempParsed = JSON.parse(jsonString);
 
-           // Validate the structure based on the 'related' flag
+           // *** Corrected Validation Logic ***
            if (tempParsed.related === true && typeof tempParsed.keywords === 'string' && (tempParsed.count === null || typeof tempParsed.count === 'number')) {
              parsedResponse = tempParsed as AiResponse;
            } else if (tempParsed.related === false && typeof tempParsed.message === 'string') {
-             parsedResponse = tempParsed as AiResponse;
+             // Ensure the message matches the expected format for safety
+             if (tempParsed.message.includes("I can only help with questions about coffee shops in")) {
+                parsedResponse = tempParsed as AiResponse;
+             } else {
+                // If message format is wrong, treat as invalid structure
+                throw new Error("Unrelated response message format mismatch.");
+             }
            } else {
+             // If structure doesn't match either valid pattern
              throw new Error("Invalid JSON structure received from AI.");
            }
          } else {
+            // If no JSON object/code block found
             throw new Error("No valid JSON found in AI response.");
          }
 
@@ -211,11 +228,13 @@ Example JSON Response (Unrelated):
         toast.error("Received an unexpected response from the AI assistant.");
         // Don't proceed if parsing/validation fails
         setIsGenerating(false);
-        return;
+        return; // Exit the function early
       }
 
       // Handle the parsed response based on relevance
+      // We know parsedResponse is not null here due to the return in catch block
       if (parsedResponse.related === true) {
+        // Type assertion is safe here because we validated the structure
         const { keywords, count } = parsedResponse;
         console.log("Parsed keywords:", keywords, "Parsed count:", count);
         if (keywords) {
@@ -227,13 +246,16 @@ Example JSON Response (Unrelated):
           toast.error("AI indicated relevance but didn't provide keywords.");
         }
       } else {
+        // Type assertion is safe here
+        const { message } = parsedResponse;
         // Query is not related
-        console.log("AI determined query is unrelated:", parsedResponse.message);
-        toast.error(parsedResponse.message); // Show the AI's rejection message
+        console.log("AI determined query is unrelated:", message);
+        toast.error(message); // Show the AI's rejection message
       }
 
     } catch (error: unknown) {
-      console.error("Detailed Error calling Gemini API:", error);
+      // This catch block handles errors from model.generateContent or other unexpected issues
+      console.error("Detailed Error calling Gemini API or during processing:", error);
       let errorMessage = 'An unknown error occurred calling the AI.';
       if (error instanceof Error) {
          errorMessage = error.message;
