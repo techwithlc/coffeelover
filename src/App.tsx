@@ -142,66 +142,94 @@ function App() {
     // setAiFilteredShopIds(null); // No longer using this state
 
     try {
-      // New prompt: Ask AI for JSON with keywords and count
-      const structuredPrompt = `Analyze the following user request about coffee shops in Taichung: "${prompt}". Respond with a JSON object containing two keys:
-      1. "keywords": A string of the key search terms. Include terms like "open late", "quiet", "wifi", etc. If the query is unclear, use the original query as keywords.
-      2. "count": An integer representing the number of shops requested (e.g., 5, 10), or null if no specific number is mentioned.
+      // New prompt: Add guardrails - check relevance first, then extract keywords/count
+      const structuredPrompt = `Analyze the following user request: "${prompt}".
 
-      Example Request: "Find 5 quiet cafes with wifi open after 10pm"
-      Example JSON Response:
-      {
-        "keywords": "quiet cafe wifi open after 10pm",
-        "count": 5
-      }
+First, determine if the request is primarily about finding or asking about coffee shops, cafes, or related amenities (like wifi, opening hours, quietness) specifically within Taichung, Taiwan.
 
-      Example Request: "Cafes near the station"
-      Example JSON Response:
-      {
-        "keywords": "Cafes near the station",
-        "count": null
-      }`;
+If the request IS NOT related to coffee shops in Taichung, respond ONLY with the following JSON object:
+{
+  "related": false,
+  "message": "I can only help with questions about coffee shops in Taichung."
+}
 
-      console.log("Sending structured prompt to AI:", structuredPrompt);
+If the request IS related to coffee shops in Taichung, respond ONLY with a JSON object containing the following keys:
+1. "related": true
+2. "keywords": A string of the key search terms. Include terms like "open late", "quiet", "wifi", "Taichung", etc. If the query is unclear but related, use the original query as keywords.
+3. "count": An integer representing the number of shops requested (e.g., 5, 10), or null if no specific number is mentioned.
+
+Example Request (Related): "Find 5 quiet cafes with wifi open after 10pm in Taichung"
+Example JSON Response (Related):
+{
+  "related": true,
+  "keywords": "quiet cafe wifi open after 10pm Taichung",
+  "count": 5
+}
+
+Example Request (Unrelated): "What's the weather like today?"
+Example JSON Response (Unrelated):
+{
+  "related": false,
+  "message": "I can only help with questions about coffee shops in Taichung."
+}`;
+
+      console.log("Sending structured prompt with guardrails to AI:", structuredPrompt);
       const result = await model.generateContent(structuredPrompt);
       const response = await result.response;
       const rawJsonResponse = response.text().trim();
       console.log("Raw JSON response from AI:", rawJsonResponse);
 
       // Safely parse the JSON response
-      let parsedResponse: { keywords: string; count: number | null } = { keywords: '', count: null };
+      // Define a type for the expected AI response structure (can be related or unrelated)
+      type AiResponse =
+        | { related: true; keywords: string; count: number | null }
+        | { related: false; message: string };
+
+      let parsedResponse: AiResponse | null = null; // Initialize as null
+
       try {
         // Attempt to find JSON within potential markdown code blocks
         const jsonMatch = rawJsonResponse.match(/```json\s*([\s\S]*?)\s*```|({[\s\S]*})/);
-        if (jsonMatch) {
-          const jsonString = jsonMatch[1] || jsonMatch[2]; // Get content from code block or direct object
-          parsedResponse = JSON.parse(jsonString);
-        } else {
-           throw new Error("No valid JSON found in AI response.");
-        }
+         if (jsonMatch) {
+           const jsonString = jsonMatch[1] || jsonMatch[2]; // Get content from code block or direct object
+           const tempParsed = JSON.parse(jsonString);
 
-        // Basic validation
-        if (typeof parsedResponse.keywords !== 'string' || (parsedResponse.count !== null && typeof parsedResponse.count !== 'number')) {
-          throw new Error("Invalid JSON structure received from AI.");
-        }
+           // Validate the structure based on the 'related' flag
+           if (tempParsed.related === true && typeof tempParsed.keywords === 'string' && (tempParsed.count === null || typeof tempParsed.count === 'number')) {
+             parsedResponse = tempParsed as AiResponse;
+           } else if (tempParsed.related === false && typeof tempParsed.message === 'string') {
+             parsedResponse = tempParsed as AiResponse;
+           } else {
+             throw new Error("Invalid JSON structure received from AI.");
+           }
+         } else {
+            throw new Error("No valid JSON found in AI response.");
+         }
 
       } catch (parseError) {
-        console.error("Failed to parse JSON response from AI:", parseError, "Raw response:", rawJsonResponse);
-        toast.error("AI response was not in the expected format. Trying search with original prompt.");
-        // Fallback: use the original prompt as keywords if parsing fails
-        parsedResponse = { keywords: prompt, count: null };
+        console.error("Failed to parse or validate JSON response from AI:", parseError, "Raw response:", rawJsonResponse);
+        toast.error("Received an unexpected response from the AI assistant.");
+        // Don't proceed if parsing/validation fails
+        setIsGenerating(false);
+        return;
       }
 
-
-      const { keywords, count } = parsedResponse;
-      console.log("Parsed keywords:", keywords, "Parsed count:", count);
-
-
-      if (keywords) {
-        const searchMessage = count ? `Searching for ${count} result(s) matching: ${keywords}` : `Searching for: ${keywords}`;
-        toast.success(searchMessage);
-        await handleKeywordSearch(keywords, count); // Pass count to search handler
+      // Handle the parsed response based on relevance
+      if (parsedResponse.related === true) {
+        const { keywords, count } = parsedResponse;
+        console.log("Parsed keywords:", keywords, "Parsed count:", count);
+        if (keywords) {
+          const searchMessage = count ? `Searching for ${count} result(s) matching: ${keywords}` : `Searching for: ${keywords}`;
+          toast.success(searchMessage);
+          await handleKeywordSearch(keywords, count); // Pass count to search handler
+        } else {
+          // Should not happen if AI follows prompt, but handle defensively
+          toast.error("AI indicated relevance but didn't provide keywords.");
+        }
       } else {
-        toast.error("AI could not extract keywords from your request.");
+        // Query is not related
+        console.log("AI determined query is unrelated:", parsedResponse.message);
+        toast.error(parsedResponse.message); // Show the AI's rejection message
       }
 
     } catch (error: unknown) {
