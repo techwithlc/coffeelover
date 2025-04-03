@@ -334,7 +334,16 @@ function App() {
         </div> {/* Close map container */}
       </div> {/* Close sidebar/map flex wrapper */}
 
-        {/* Toaster moved outside main div, but inside Fragment */}
+      {/* Render LocationDetails OUTSIDE the overflow-hidden container */}
+      {selectedLocation && (
+        <LocationDetails
+          location={selectedLocation}
+          isFavorite={favoriteIds.has(selectedLocation.id)} // Pass isFavorite
+          onToggleFavorite={handleToggleFavorite} // Pass handler
+          onClose={() => setSelectedLocation(null)}
+        />
+      )}
+
       </div> {/* Close main flex container */}
       <Toaster />
     </> /* Close Fragment */
