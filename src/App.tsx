@@ -283,14 +283,13 @@ Respond ONLY with JSON that strictly follows one of these formats:
    - If too vague (e.g., "coffee"), use message: "Could you be more specific? e.g., 'cafes near me with wifi', 'quiet coffee shop in Paris', 'best latte nearby'."
    - If asking for impossible features (e.g., specific bean origin), use message: "I can search by location, hours, wifi, charging, pets, and menu items, but not bean origins yet."`;
 
-
-      console.log("Sending prompt to AI:", structuredPrompt);
+      // console.log("Sending prompt to AI:", structuredPrompt); // REMOVED CONSOLE LOG
       loadingToastId = toast.loading("Asking AI assistant...");
 
       const result = await model.generateContent(structuredPrompt);
       const response = await result.response;
       const rawJsonResponse = response.text().trim();
-      console.log("Raw AI response:", rawJsonResponse);
+      // console.log("Raw AI response:", rawJsonResponse); // REMOVED CONSOLE LOG
 
       let parsedResponse: AiResponse | null = null;
       try {
@@ -393,7 +392,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
     }
 
     try {
-      console.log("Search API URL:", searchApiUrl);
+      // console.log("Search API URL:", searchApiUrl); // REMOVED CONSOLE LOG
       const response = await fetch(searchApiUrl);
       if (!response.ok) throw new Error(`Search API HTTP error! status: ${response.status}`);
       const data: PlacesNearbyResponse = await response.json();
