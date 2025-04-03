@@ -267,12 +267,12 @@ function App() {
     let aiResponseRelated = false;
 
     try {
-      // Enhanced AI Prompt Instructions
+      // Enhanced AI Prompt Instructions - Updated for Europe
       const structuredPrompt = `Analyze the user request: "${prompt}".
-Is it about finding coffee shops/cafes?
+Is it about finding coffee shops/cafes, potentially in Europe or elsewhere?
 Respond ONLY with JSON that strictly follows one of these formats:
-1. If related: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null}|null}
-   - Extract relevant keywords (e.g., "quiet cafe Taipei", "coffee near Central Park", "latte"). Include location if mentioned. If specific items like "latte" or "americano" are mentioned, include them in keywords AND set "menuItem".
+1. If related to finding coffee shops: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null}|null}
+   - Extract relevant keywords (e.g., "quiet cafe Paris", "coffee near me Berlin", "latte Rome"). Include location if mentioned. If specific items like "latte" or "americano" are mentioned, include them in keywords AND set "menuItem".
    - If the user asks for places open "now", "currently", etc., set "openNow": true.
    - If the user asks for places open after a specific time (e.g., "after 10pm", "late night"), extract time as HH:MM (24h) for "openAfter". Assume "late" means 21:00.
    - Extract boolean filters for "wifi", "charging" (power outlets), "pets" (pet friendly) if mentioned.
@@ -280,8 +280,9 @@ Respond ONLY with JSON that strictly follows one of these formats:
    - Extract a specific number if requested (e.g., "find 3 cafes") for "count".
 2. If unrelated or too ambiguous: {"related": false, "message": "...", "suggestion": "..."|null}
    - If unrelated to coffee shops, use message: "I can only help with coffee shop searches."
-   - If too vague (e.g., "coffee"), use message: "Could you be more specific? e.g., 'cafes near me with wifi', 'quiet coffee shop in downtown', 'best latte nearby'."
+   - If too vague (e.g., "coffee"), use message: "Could you be more specific? e.g., 'cafes near me with wifi', 'quiet coffee shop in Paris', 'best latte nearby'."
    - If asking for impossible features (e.g., specific bean origin), use message: "I can search by location, hours, wifi, charging, pets, and menu items, but not bean origins yet."`;
+
 
       console.log("Sending prompt to AI:", structuredPrompt);
       loadingToastId = toast.loading("Asking AI assistant...");
