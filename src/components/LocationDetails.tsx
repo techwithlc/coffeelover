@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom'; // Import ReactDOM for Portals
 import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin } from 'lucide-react'; // Added MapPin
 // import { supabase } from '../lib/supabaseClient'; // Removed unused import
 import { CoffeeShop /*, Review */ } from '../lib/types'; // Remove unused Review type
@@ -154,7 +155,17 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
     );
   }
 
-  return (
+  // Get the portal target node
+  const modalRoot = document.getElementById('modal-root');
+
+  // If modalRoot doesn't exist, don't render the portal (shouldn't happen with correct index.html)
+  if (!modalRoot) {
+    return null;
+  }
+
+  // Render using a Portal into modal-root
+  return ReactDOM.createPortal(
+    // Use fixed positioning again, as portal handles DOM hierarchy issues
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto">
         {/* Header */}
@@ -291,6 +302,7 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
         {/* Removed Review Form Section */}
 
       </div>
-    </div>
+    </div>,
+    modalRoot // Target node for the portal
   );
 }
