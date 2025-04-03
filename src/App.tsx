@@ -142,18 +142,64 @@ function App() {
     // setAiFilteredShopIds(null); // No longer using this state
 
     try {
-      // New prompt: Ask AI to extract keywords for Google Places search
-      const keywordPrompt = `Extract the key search terms from the following user request about coffee shops in Taichung: "${prompt}". Respond with ONLY the keywords, separated by spaces. For example, if the user asks "quiet cafes with wifi open late", respond with "quiet cafe wifi open late". If the query is unclear, respond with the original query.`;
+      // New prompt: Ask AI for JSON with keywords and count
+      const structuredPrompt = `Analyze the following user request about coffee shops in Taichung: "${prompt}". Respond with a JSON object containing two keys:
+      1. "keywords": A string of the key search terms. Include terms like "open late", "quiet", "wifi", etc. If the query is unclear, use the original query as keywords.
+      2. "count": An integer representing the number of shops requested (e.g., 5, 10), or null if no specific number is mentioned.
 
-      console.log("Sending keyword extraction prompt to AI:", keywordPrompt);
-      const result = await model.generateContent(keywordPrompt);
+      Example Request: "Find 5 quiet cafes with wifi open after 10pm"
+      Example JSON Response:
+      {
+        "keywords": "quiet cafe wifi open after 10pm",
+        "count": 5
+      }
+
+      Example Request: "Cafes near the station"
+      Example JSON Response:
+      {
+        "keywords": "Cafes near the station",
+        "count": null
+      }`;
+
+      console.log("Sending structured prompt to AI:", structuredPrompt);
+      const result = await model.generateContent(structuredPrompt);
       const response = await result.response;
-      const keywords = response.text().trim();
-      console.log("Keywords extracted by AI:", keywords);
+      const rawJsonResponse = response.text().trim();
+      console.log("Raw JSON response from AI:", rawJsonResponse);
+
+      // Safely parse the JSON response
+      let parsedResponse: { keywords: string; count: number | null } = { keywords: '', count: null };
+      try {
+        // Attempt to find JSON within potential markdown code blocks
+        const jsonMatch = rawJsonResponse.match(/```json\s*([\s\S]*?)\s*```|({[\s\S]*})/);
+        if (jsonMatch) {
+          const jsonString = jsonMatch[1] || jsonMatch[2]; // Get content from code block or direct object
+          parsedResponse = JSON.parse(jsonString);
+        } else {
+           throw new Error("No valid JSON found in AI response.");
+        }
+
+        // Basic validation
+        if (typeof parsedResponse.keywords !== 'string' || (parsedResponse.count !== null && typeof parsedResponse.count !== 'number')) {
+          throw new Error("Invalid JSON structure received from AI.");
+        }
+
+      } catch (parseError) {
+        console.error("Failed to parse JSON response from AI:", parseError, "Raw response:", rawJsonResponse);
+        toast.error("AI response was not in the expected format. Trying search with original prompt.");
+        // Fallback: use the original prompt as keywords if parsing fails
+        parsedResponse = { keywords: prompt, count: null };
+      }
+
+
+      const { keywords, count } = parsedResponse;
+      console.log("Parsed keywords:", keywords, "Parsed count:", count);
+
 
       if (keywords) {
-        toast.success(`Searching for: ${keywords}`);
-        await handleKeywordSearch(keywords); // Trigger Google Places search with extracted keywords
+        const searchMessage = count ? `Searching for ${count} result(s) matching: ${keywords}` : `Searching for: ${keywords}`;
+        toast.success(searchMessage);
+        await handleKeywordSearch(keywords, count); // Pass count to search handler
       } else {
         toast.error("AI could not extract keywords from your request.");
       }
@@ -174,8 +220,8 @@ function App() {
   };
 
 
-  // Handler for keyword search
-  const handleKeywordSearch = async (keyword: string) => {
+  // Handler for keyword search - now accepts an optional count
+  const handleKeywordSearch = async (keyword: string, requestedCount: number | null = null) => {
     setIsLoading(true); setCoffeeShops([]);
     // API key check is still useful here to prevent unnecessary calls if missing locally,
     // but we don't include it in the fetch URL itself.
@@ -193,8 +239,21 @@ function App() {
           address: place.vicinity, rating: place.rating, opening_hours: undefined, price_range: undefined,
           wifi_available: undefined, pet_friendly: undefined, description: undefined, menu_highlights: [],
         }));
-        setCoffeeShops(fetchedShops);
-        if (fetchedShops.length === 0) toast.success(`No results found for "${keyword}".`);
+
+        // Slice results if a specific count was requested
+        const finalShops = requestedCount !== null ? fetchedShops.slice(0, requestedCount) : fetchedShops;
+
+        setCoffeeShops(finalShops);
+
+        if (finalShops.length === 0) {
+           toast.success(`No results found for "${keyword}".`);
+        } else if (requestedCount !== null && fetchedShops.length < requestedCount) {
+           toast.success(`Found ${fetchedShops.length} result(s) for "${keyword}" (less than requested ${requestedCount}).`);
+        } else if (requestedCount !== null && finalShops.length < requestedCount) {
+           // This case shouldn't happen with slice, but good for robustness
+           toast.success(`Displaying ${finalShops.length} result(s) for "${keyword}".`);
+        }
+
       } else if (data.status === 'ZERO_RESULTS') {
         toast.error(`No results found for "${keyword}".`); setCoffeeShops([]);
       } else {

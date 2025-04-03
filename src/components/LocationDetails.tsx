@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe } from 'lucide-react';
+import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin } from 'lucide-react'; // Added MapPin
 // import { supabase } from '../lib/supabaseClient'; // Removed unused import
 import { CoffeeShop /*, Review */ } from '../lib/types'; // Remove unused Review type
 // import { mockReviews } from '../lib/mockData'; // Remove unused import
@@ -131,6 +131,17 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
       .catch(err => console.error('Could not copy text: ', err));
   };
 
+  // Function to open Google Maps directions
+  const handleGetDirections = () => {
+    if (location.lat && location.lng) {
+      // Use "current+location" which prompts the user for their location in Google Maps
+      const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=current+location&destination=${location.lat},${location.lng}`;
+      window.open(mapsUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      alert("Location coordinates are not available for directions.");
+    }
+  };
+
   // Loading state
   if (isLoadingDetails && !placeDetails) {
     return (
@@ -177,11 +188,11 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
          {photoUrl ? (
            <div className="mb-4 md:mb-6 rounded-lg overflow-hidden">
              <img
-               src={photoUrl}
-               alt={`Photo of ${location.name}`}
-               className="w-full h-48 object-cover"
-             />
-           </div>
+                src={photoUrl}
+                alt={`Photo of ${location.name}`}
+                className="w-full object-cover" // Removed h-48
+              />
+            </div>
          ) : isLoadingDetails ? (
             <div className="mb-4 md:mb-6 rounded-lg overflow-hidden bg-gray-200 h-48 flex items-center justify-center">
                 <p className="text-gray-500 text-sm">Loading photo...</p>
@@ -264,6 +275,15 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
             </svg>
             Share this coffee shop
+          </button>
+          {/* Get Directions Button */}
+          <button
+            onClick={handleGetDirections}
+            className="mt-6 ml-4 flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors"
+            disabled={!location.lat || !location.lng} // Disable if no coordinates
+          >
+            <MapPin size={18} />
+            Get Directions
           </button>
         </div>
 
