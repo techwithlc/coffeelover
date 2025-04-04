@@ -94,10 +94,10 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters): CoffeeS
     }
 
     // Check wifi filter (using simulated data)
-    if (filters.wifi === true && shop.wifi_available !== true) return false;
+    if (filters.wifi === true && shop.has_wifi !== true) return false;
 
     // Check charging filter (using simulated data)
-    if (filters.charging === true && shop.charging_available !== true) return false;
+    if (filters.charging === true && shop.has_chargers !== true) return false;
 
     // Check pets filter (using simulated data)
     if (filters.pets === true && shop.pet_friendly !== true) return false;
@@ -153,9 +153,10 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
         rating: details.rating,
         opening_hours: details.opening_hours,
         // --- Populate based on simulation or actual parsed data ---
-        wifi_available: simulatedWifi,
+        has_wifi: simulatedWifi, // Updated wifi_available
         pet_friendly: simulatedPets,
-        charging_available: simulatedCharging,
+        has_chargers: simulatedCharging, // Updated charging_available
+        // charger_count: undefined, // Add if simulation needed
         // --- Other fields ---
         price_range: details.price_level?.toString(),
         description: details.editorial_summary?.overview,
@@ -442,8 +443,8 @@ Respond ONLY with JSON that strictly follows one of these formats:
           lat: place.geometry.location.lat, lng: place.geometry.location.lng,
           address: place.vicinity || 'Address not available', // Use vicinity from search result
           rating: place.rating, opening_hours: undefined,
-          price_range: undefined, wifi_available: undefined, pet_friendly: undefined,
-          charging_available: undefined, description: undefined, menu_highlights: [],
+          price_range: undefined, has_wifi: undefined, pet_friendly: undefined, // Updated wifi_available
+          has_chargers: undefined, description: undefined, menu_highlights: [], // Updated charging_available
         }));
         // Apply filters that don't require details (if any - currently none besides openNow handled by API)
         processedShops = aiFilters ? filterShopsByCriteria(processedShops, aiFilters) : processedShops;

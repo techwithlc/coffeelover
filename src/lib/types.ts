@@ -25,9 +25,13 @@ export interface CoffeeShop {
   lng?: number;
   opening_hours?: OpeningHours; // Use the detailed type
   price_range?: string;
-  wifi_available?: boolean; // Already existed, ensure it's used
-  pet_friendly?: boolean; // Already existed, ensure it's used
-  charging_available?: boolean; // New: For filtering by charging options
+  // wifi_available?: boolean; // Keep existing for now, map if needed later
+  // pet_friendly?: boolean; // Keep existing for now, map if needed later
+  // charging_available?: boolean; // Keep existing for now, map if needed later
+  has_wifi?: boolean; // Matches DB column
+  has_chargers?: boolean; // Matches DB column
+  charger_count?: number; // Matches DB column
+  pet_friendly?: boolean; // Assuming this exists in DB or is handled differently
   description?: string;
   rating?: number;
   menu_highlights?: string[];
@@ -65,11 +69,11 @@ export interface Favorite {
   coffee_shop?: CoffeeShop;
 }
 
-// Database interface to mimic Supabase structure
+// Database interface reflecting actual Supabase structure
 export interface DatabaseSchema {
   Tables: {
-    coffee_shops: {
-      Row: CoffeeShop;
+    locations: { // Correct table name
+      Row: CoffeeShop; // CoffeeShop interface now includes the new fields
     };
     users: {
       Row: User;

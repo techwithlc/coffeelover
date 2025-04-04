@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom'; // Import ReactDOM for Portals
-import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin } from 'lucide-react'; // Added MapPin
+import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin, BatteryCharging } from 'lucide-react'; // Added MapPin, BatteryCharging
 // import { supabase } from '../lib/supabaseClient'; // Removed unused import
 import { CoffeeShop /*, Review */ } from '../lib/types'; // Remove unused Review type
 // import { mockReviews } from '../lib/mockData'; // Remove unused import
@@ -249,10 +249,18 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
                 <span className="text-sm">{location.price_range}</span>
               </div>
             )}
-            {location.wifi_available && (
+            {location.has_wifi && ( // Updated property name
               <div className="flex items-center gap-2">
                 <Wifi size={18} className="text-green-500" />
                 <span className="text-sm">Wi-Fi Available</span>
+              </div>
+            )}
+            {location.has_chargers && ( // Added charger info display
+              <div className="flex items-center gap-2">
+                <BatteryCharging size={18} className="text-green-500" />
+                <span className="text-sm">
+                  Charging Available {location.charger_count !== undefined && location.charger_count > 0 ? `(${location.charger_count})` : ''}
+                </span>
               </div>
             )}
             {location.pet_friendly && (
