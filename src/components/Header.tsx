@@ -52,7 +52,7 @@ const Header: React.FC<HeaderProps> = ({
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Coffee shops near me, open late..." // Updated placeholder
+            placeholder="Coffee shops near me, open late... or try 'cafes with pretty girls'" // Updated placeholder with playful example
             className="flex-grow p-2 border border-r-0 rounded-l focus:outline-none focus:ring-2 focus:ring-blue-300"
             disabled={isGenerating}
           />

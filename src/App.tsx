@@ -29,6 +29,49 @@ function deg2rad(deg: number): number {
 }
 // --- End Haversine ---
 
+// Helper function to check if a shop is open now, considering UTC offset
+const isShopOpenNow = (shop: CoffeeShop): boolean | undefined => {
+  if (!shop.opening_hours?.periods || shop.utc_offset_minutes === undefined) {
+    // If we don't have periods or offset, rely on the simple open_now flag (less accurate)
+    return shop.opening_hours?.open_now;
+  }
+
+  // Get current UTC time
+  const nowUtc = new Date();
+
+  // Calculate shop's current time
+  const shopTimeNow = new Date(nowUtc.getTime() + shop.utc_offset_minutes * 60000);
+  const currentDay = shopTimeNow.getUTCDay(); // 0 = Sunday, 1 = Monday, ...
+  const currentTime = shopTimeNow.getUTCHours() * 100 + shopTimeNow.getUTCMinutes();
+
+  for (const period of shop.opening_hours.periods) {
+    // Check if there's a period for the current day
+    if (period.open.day === currentDay) {
+      const openTime = parseInt(period.open.time, 10);
+      // Check for periods that span across midnight
+      if (period.close && period.close.day !== currentDay) {
+        // Case 1: Open today, closes tomorrow (e.g., open Mon 10:00, close Tue 02:00)
+        // We are open if current time is after open time today
+        if (currentTime >= openTime) return true;
+        // Need to check if the *previous* day's period extends into today
+        // (This logic gets complex, stick to simpler check for now)
+
+      } else if (period.close) {
+        // Case 2: Opens and closes on the same day
+        const closeTime = parseInt(period.close.time, 10);
+        if (currentTime >= openTime && currentTime < closeTime) {
+          return true;
+        }
+      } else {
+        // Case 3: Open 24 hours (close is missing)
+        if (period.open.time === "0000") return true;
+      }
+    }
+    // Add handling for previous day's period spilling over midnight if needed
+  }
+
+  return false; // Default to closed if no matching open period found
+};
 
 // Initialize Gemini AI Client
 const apiKeyGemini = import.meta.env.VITE_GEMINI_API_KEY;
@@ -36,7 +79,7 @@ let genAI: GoogleGenerativeAI | null = null;
 let model: GenerativeModel | null = null;
 if (apiKeyGemini) {
   genAI = new GoogleGenerativeAI(apiKeyGemini);
-  model = genAI.getGenerativeModel({ model: "gemini-2.5-pro-exp-03-25"});
+  model = genAI.getGenerativeModel({ model: "gemini-2.5-pro-exp-03-25" });
 } else {
   console.error("Gemini API Key is missing!");
 }
@@ -53,19 +96,21 @@ interface PlaceReview {
   time?: number;
 }
 
+// Extended PlaceDetailsResult to include utc_offset_minutes
 interface PlaceDetailsResult {
   place_id: string; name?: string; formatted_address?: string; geometry?: { location: { lat: number; lng: number; }; }; rating?: number; opening_hours?: OpeningHours;
   reviews?: PlaceReview[]; // Use the defined type
   website?: string;
   editorial_summary?: { overview?: string };
   price_level?: number;
+  utc_offset_minutes?: number; // Added for time zone calculation
 }
 interface PlacesNearbyResponse { results: PlaceResult[]; status: string; error_message?: string; next_page_token?: string; }
 interface PlaceDetailsResponse { result?: PlaceDetailsResult; status: string; error_message?: string; }
 
 // AI Response Types - Enhanced Filters
 interface AiFilters {
-  openAfter?: string; // HH:MM
+  openAfter?: string | null; // HH:MM format
   openNow?: boolean;
   wifi?: boolean;
   charging?: boolean;
@@ -74,24 +119,24 @@ interface AiFilters {
   quality?: string; // e.g., "best", "good", "quiet"
   distanceKm?: number | null; // Added for distance filter
   minRating?: number | null; // Added for minimum rating filter
+  socialVibe?: boolean | null; // Added for playful queries
 }
 type AiResponse = | { related: true; keywords: string; count: number | null; filters: AiFilters | null } | { related: false; message: string; suggestion?: string };
 
 // --- Helper Function for Filtering ---
-const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters): CoffeeShop[] => {
-  if (!filters || Object.keys(filters).length === 0) {
-    return shops;
-  }
-
+const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpenNow: boolean = true): CoffeeShop[] => {
+  console.log("Filtering shops based on AI criteria:", filters);
   return shops.filter(shop => {
     // Check openNow filter (client-side check if details were fetched for other reasons)
-    if (filters.openNow === true) {
-      if (shop.opening_hours?.open_now !== true) return false;
+    if (checkOpenNow && filters.openNow === true) {
+      // Use the timezone-aware check function
+      if (isShopOpenNow(shop) === false) return false;
     }
 
-    // Check openAfter filter
+    // Check openAfter filter (complex, relies on opening_hours.periods)
     if (filters.openAfter) {
-      if (!shop.opening_hours?.periods) return false; // Need periods to check
+      // This check remains complex and relies on having periods data
+      if (!shop.opening_hours?.periods) return false;
       const [filterHour, filterMinute] = filters.openAfter.split(':').map(Number);
       if (isNaN(filterHour) || isNaN(filterMinute)) {
         console.warn(`Invalid openAfter time format: ${filters.openAfter}`);
@@ -133,11 +178,10 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters): CoffeeS
   });
 };
 
-
 // --- Helper Function for Fetching Place Details ---
-const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating'; // Use formatted_address
-const HOURS_FIELD = 'opening_hours';
-// Fields that *might* hint at amenities
+// Always fetch rating, opening_hours, and utc_offset_minutes for filtering/display
+const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours,utc_offset_minutes';
+// Fields that *might* hint at amenities (Keep separate for clarity, though included in BASE now)
 const WIFI_HINT_FIELDS = 'website,editorial_summary';
 const PETS_HINT_FIELDS = 'website,editorial_summary';
 const CHARGING_HINT_FIELDS = 'website,editorial_summary';
@@ -151,7 +195,8 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
   }
 
   // Combine base fields with required fields, removing duplicates
-  const uniqueFields = Array.from(new Set([BASE_DETAIL_FIELDS, ...requiredFields])).join(',');
+  // Ensure BASE_DETAIL_FIELDS are always included
+  const uniqueFields = Array.from(new Set([...BASE_DETAIL_FIELDS.split(','), ...requiredFields])).join(',');
   const apiUrl = `/maps-api/place/details/json?place_id=${placeId}&fields=${uniqueFields}`;
 
   try {
@@ -179,6 +224,7 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
         address: details.formatted_address || 'Address not available', // Use formatted_address
         rating: details.rating,
         opening_hours: details.opening_hours,
+        utc_offset_minutes: details.utc_offset_minutes, // Include offset
         // --- Populate based on simulation or actual parsed data ---
         has_wifi: simulatedWifi, // Updated wifi_available
         pet_friendly: simulatedPets,
@@ -200,7 +246,6 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
   }
 }
 
-
 // --- Custom Toast Renderer ---
 const renderClosableToast = (message: string, toastInstance: Toast, type: 'success' | 'error' = 'success') => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
@@ -218,7 +263,6 @@ const renderClosableToast = (message: string, toastInstance: Toast, type: 'succe
     </button>
   </div>
 );
-
 
 function App() {
   const [selectedLocation, setSelectedLocation] = useState<CoffeeShop | null>(null);
@@ -298,8 +342,8 @@ function App() {
   const handlePromptSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) {
-       toast.error((t) => renderClosableToast("Please enter what you're looking for.", t, 'error'));
-       return;
+      toast.error((t) => renderClosableToast("Please enter what you're looking for.", t, 'error'));
+      return;
     }
     if (!model) {
       toast.error((t) => renderClosableToast("AI assistant is not available right now.", t, 'error'));
@@ -312,10 +356,10 @@ function App() {
 
     try {
       // Enhanced AI Prompt Instructions - Updated for Europe
-      const structuredPrompt = `Analyze the user request: "${prompt}".
+      const structuredPrompt = `Analyze the user request: "${prompt}" for finding coffee shops/cafes.
 Is it about finding coffee shops/cafes, potentially in Europe or elsewhere?
 Respond ONLY with JSON that strictly follows one of these formats:
-1. If related to finding coffee shops: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null, "minRating": num|null}|null}
+1. If related to finding coffee shops: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null, "minRating": num|null, "socialVibe": bool|null}|null}
    - Extract relevant keywords (e.g., "quiet cafe Paris", "coffee near me Berlin", "latte Rome"). Include location if mentioned. If specific items like "latte" or "americano" are mentioned, include them in keywords AND set "menuItem".
    - **Distance:** If the user specifies a distance (e.g., "within 5km", "10 miles nearby", "5 km radius"), extract the numeric value and set "distanceKm". Convert miles to km (1 mile = 1.60934 km). If no unit is specified, assume km. Set to null if no distance is mentioned.
    - **Minimum Rating:** If the user specifies a minimum rating (e.g., "over 4 stars", "at least 4.5 stars", "4.5顆星以上"), extract the numeric rating value and set "minRating". Set to null if no minimum rating is mentioned.
@@ -323,10 +367,11 @@ Respond ONLY with JSON that strictly follows one of these formats:
    - Extract boolean filters for "wifi", "charging" (power outlets), "pets" (pet friendly) if mentioned.
    - Extract specific quality terms like "best", "good", "quiet" into the "quality" filter. These primarily influence keywords but note them.
    - Extract a specific number if requested (e.g., "find 3 cafes") for "count".
-2. If unrelated or too ambiguous: {"related": false, "message": "...", "suggestion": "..."|null}
-   - If unrelated to coffee shops, use message: "I can only help with coffee shop searches."
-   - If too vague (e.g., "coffee"), use message: "Could you be more specific? e.g., 'cafes near me with wifi', 'quiet coffee shop in Paris', 'best latte nearby'."
-   - If asking for impossible features (e.g., specific bean origin), use message: "I can search by location, hours, wifi, charging, pets, and menu items, but not bean origins yet."`;
+   - **Social Vibe:** If the user asks about "pretty girls", "attractive people", "trendy spots", "stylish vibes", "instagrammable cafes", "popular social hubs", or similar concepts, set "socialVibe": true. Add terms like "trendy", "aesthetic", "popular" to keywords *if* they aren't already implied by the user's query. Set to null otherwise.
+2. If unrelated to finding coffee shops: {"related": false, "message": "...", "suggestion": "..."|null}
+   - Provide a polite message explaining the app's purpose (finding coffee shops).
+   - Optionally suggest a relevant query like "Try 'cafes near me'".
+`;
 
       // console.log("Sending prompt to AI:", structuredPrompt); // REMOVED CONSOLE LOG
       loadingToastId = toast.loading("Asking AI assistant...");
@@ -345,13 +390,13 @@ Respond ONLY with JSON that strictly follows one of these formats:
 
         // Basic validation (can be expanded)
         if (tempParsed.related === true) {
-            if (typeof tempParsed.keywords !== 'string' || !tempParsed.keywords.trim()) throw new Error("Missing or empty 'keywords'.");
-            parsedResponse = tempParsed as AiResponse;
+          if (typeof tempParsed.keywords !== 'string' || !tempParsed.keywords.trim()) throw new Error("Missing or empty 'keywords'.");
+          parsedResponse = tempParsed as AiResponse;
         } else if (tempParsed.related === false) {
-            if (typeof tempParsed.message !== 'string' || !tempParsed.message.trim()) throw new Error("Missing or empty 'message'.");
-            parsedResponse = tempParsed as AiResponse;
+          if (typeof tempParsed.message !== 'string' || !tempParsed.message.trim()) throw new Error("Missing or empty 'message'.");
+          parsedResponse = tempParsed as AiResponse;
         } else {
-            throw new Error("Invalid JSON structure: 'related' field missing or invalid.");
+          throw new Error("Invalid JSON structure: 'related' field missing or invalid.");
         }
       } catch (parseError: unknown) { // Use unknown
         const message = parseError instanceof Error ? parseError.message : 'Unknown parsing error';
@@ -396,9 +441,9 @@ Respond ONLY with JSON that strictly follows one of these formats:
       console.error("Error calling Gemini API:", error);
       toast.error((t) => renderClosableToast(`AI Error: ${message}`, t, 'error'), { id: loadingToastId });
     } finally {
-       if (!aiResponseRelated) {
-           setIsGenerating(false);
-       }
+      if (!aiResponseRelated) {
+        setIsGenerating(false);
+      }
     }
   };
 
@@ -429,18 +474,10 @@ Respond ONLY with JSON that strictly follows one of these formats:
     const requestedRadiusKm = aiFilters?.distanceKm ?? null; // Get distance from AI filters
     console.log("Requested Radius for Filtering (km):", requestedRadiusKm);
 
-    // Determine if openNow parameter can be used directly
-    const useOpenNowParam = aiFilters?.openNow === true &&
-      !aiFilters.openAfter && !aiFilters.wifi && !aiFilters.charging &&
-      !aiFilters.pets && !aiFilters.menuItem && !aiFilters.quality;
-
     // Use Text Search API - more flexible for keywords
     // The backend proxy will handle adding the radius parameter based on its parsing
-    let searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&type=cafe`; // Removed frontend radius
-    if (useOpenNowParam) {
-       searchApiUrl += '&opennow=true';
-       console.log("Using opennow=true parameter in Text Search");
-    }
+    // We no longer add opennow=true here.
+    const searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&type=cafe`;
 
     try {
       // console.log("Search API URL:", searchApiUrl); // REMOVED CONSOLE LOG
@@ -466,86 +503,115 @@ Respond ONLY with JSON that strictly follows one of these formats:
     // Step 2 & 3: Fetch Details & Filter
     let processedShops: CoffeeShop[] = [];
     const detailFieldsToFetch: string[] = [];
-    // Determine required fields based on filters that need details
-    if (aiFilters?.openAfter || (aiFilters?.openNow && !useOpenNowParam)) detailFieldsToFetch.push(HOURS_FIELD);
-    if (aiFilters?.wifi) { detailFieldsToFetch.push(WIFI_HINT_FIELDS); detailFieldsToFetch.push('wifi'); }
-    if (aiFilters?.charging) { detailFieldsToFetch.push(CHARGING_HINT_FIELDS); detailFieldsToFetch.push('charging'); }
+    // Determine required fields based *only* on amenity/menu hints, as base details are always fetched
+    // if (aiFilters?.openAfter || aiFilters?.openNow) detailFieldsToFetch.push(HOURS_FIELD); // Already in BASE_DETAIL_FIELDS
+    if (aiFilters?.wifi) { detailFieldsToFetch.push(WIFI_HINT_FIELDS); detailFieldsToFetch.push('wifi'); } // Keep hint fields
+    if (aiFilters?.charging) { detailFieldsToFetch.push(CHARGING_HINT_FIELDS); detailFieldsToFetch.push('charging'); } // Keep hint fields
     if (aiFilters?.pets) { detailFieldsToFetch.push(PETS_HINT_FIELDS); detailFieldsToFetch.push('pets'); }
     if (aiFilters?.menuItem) { detailFieldsToFetch.push(MENU_HINT_FIELDS); }
-    // Always fetch rating if minRating filter might be applied
-    if (aiFilters?.minRating !== null) {
-        if (!detailFieldsToFetch.includes(BASE_DETAIL_FIELDS)) {
-             detailFieldsToFetch.push(BASE_DETAIL_FIELDS); // Ensure rating is fetched
-        }
-    }
+    // Rating, opening_hours, utc_offset_minutes are always fetched via BASE_DETAIL_FIELDS
 
-
-    const needsDetailsFetch = detailFieldsToFetch.length > 0;
+    // We *always* need details now for potential time zone / rating / distance filtering
+    // const needsDetailsFetch = true; // Always fetch details - Removed as it's unused
 
     try {
-      if (needsDetailsFetch) {
-        toast.loading('Fetching details for filtering...', { id: loadingToastId });
-        const detailPromises = candidateShops.map(candidate => fetchPlaceDetails(candidate.place_id, detailFieldsToFetch));
-        const detailedResults = await Promise.all(detailPromises);
-        const validDetailedShops = detailedResults.filter((shop): shop is CoffeeShop => shop !== null);
+      // Always fetch details now
+      toast.loading('Fetching details for filtering...', { id: loadingToastId });
+      const detailPromises = candidateShops.map(candidate => fetchPlaceDetails(candidate.place_id, detailFieldsToFetch));
+      const detailedResults = await Promise.all(detailPromises);
+      processedShops = detailedResults.filter((shop): shop is CoffeeShop => shop !== null); // Initial list with details
+      console.log(`Fetched details for ${processedShops.length} / ${candidateShops.length} shops.`);
 
-        console.log(`Fetched details for ${validDetailedShops.length} / ${candidateShops.length} shops.`);
-        processedShops = aiFilters ? filterShopsByCriteria(validDetailedShops, aiFilters) : validDetailedShops;
-        toast.success((t) => renderClosableToast(`Found ${processedShops.length} potential shop(s) after detailed check.`, t), { id: loadingToastId }); // Updated message
+      // Apply non-geo/rating/openNow filters first (like amenities, openAfter)
+      const criteriaFilteredShops = aiFilters ? filterShopsByCriteria(processedShops, aiFilters, false) : processedShops; // Pass false to skip openNow here
+      console.log(`Filtered ${processedShops.length} shops down to ${criteriaFilteredShops.length} based on criteria (excl. geo/rating/openNow).`);
 
-      } else {
-        // Map basic data if no details needed
-        processedShops = candidateShops.map(place => ({
-          id: place.place_id, name: place.name,
-          lat: place.geometry.location.lat, lng: place.geometry.location.lng,
-          address: place.vicinity || 'Address not available', // Use vicinity from search result
-          rating: place.rating, opening_hours: undefined,
-          price_range: undefined, has_wifi: undefined, pet_friendly: undefined, // Updated wifi_available
-          has_chargers: undefined, description: undefined, menu_highlights: [], // Updated charging_available
-        }));
-        // Apply filters that don't require details (if any - currently none besides openNow handled by API)
-        processedShops = aiFilters ? filterShopsByCriteria(processedShops, aiFilters) : processedShops;
-        toast.success((t) => renderClosableToast(`Found ${processedShops.length} initial result(s).`, t), { id: loadingToastId });
+      // --- Client-Side "Open Now" Filtering (Timezone Aware) ---
+      let openNowFilteredShops = criteriaFilteredShops;
+      if (aiFilters?.openNow === true) {
+        openNowFilteredShops = criteriaFilteredShops.filter(shop => isShopOpenNow(shop) === true);
+        console.log(`Filtered ${criteriaFilteredShops.length} shops down to ${openNowFilteredShops.length} based on 'openNow'.`);
       }
+      // --- End "Open Now" Filtering ---
 
       // --- Client-Side Distance Filtering ---
-      let distanceFilteredShops = processedShops;
+      let distanceFilteredShops = openNowFilteredShops; // Filter results from openNow check
       if (requestedRadiusKm !== null) {
-          distanceFilteredShops = processedShops.filter(shop => {
-              if (shop.lat && shop.lng) {
-                  const distance = getDistanceFromLatLonInKm(lat, lng, shop.lat, shop.lng);
-                  return distance <= requestedRadiusKm!;
-              }
-              return false; // Exclude if shop has no coordinates
-          });
-          console.log(`Filtered ${processedShops.length} shops down to ${distanceFilteredShops.length} within ${requestedRadiusKm}km.`);
-          if (processedShops.length > 0 && distanceFilteredShops.length < processedShops.length) {
-               toast.success((t) => renderClosableToast(`Filtered results to within ${requestedRadiusKm}km.`, t));
+        distanceFilteredShops = openNowFilteredShops.filter(shop => {
+          if (shop.lat && shop.lng) {
+            const distance = getDistanceFromLatLonInKm(lat, lng, shop.lat, shop.lng);
+            return distance <= requestedRadiusKm!;
           }
+          return false; // Exclude if shop has no coordinates
+        });
+        console.log(`Filtered ${openNowFilteredShops.length} shops down to ${distanceFilteredShops.length} within ${requestedRadiusKm}km.`);
+        if (openNowFilteredShops.length > 0 && distanceFilteredShops.length < openNowFilteredShops.length) {
+          toast.success((t) => renderClosableToast(`Filtered results to within ${requestedRadiusKm}km.`, t));
+        }
       }
       // --- End Distance Filtering ---
 
       // --- Client-Side Rating Filtering ---
-      let ratingFilteredShops = distanceFilteredShops;
+      let ratingFilteredShops = distanceFilteredShops; // Filter results from distance check
       const minRating = aiFilters?.minRating ?? null;
       if (minRating !== null) {
-          ratingFilteredShops = distanceFilteredShops.filter(shop => {
-              // Ensure rating exists and meets the minimum requirement
-              // Google Places API returns rating, so we check if it exists on the shop object
-              return shop.rating !== undefined && shop.rating >= minRating;
-          });
-          console.log(`Filtered ${distanceFilteredShops.length} shops down to ${ratingFilteredShops.length} with min rating ${minRating}.`);
-           if (distanceFilteredShops.length > 0 && ratingFilteredShops.length < distanceFilteredShops.length) {
-               toast.success((t) => renderClosableToast(`Filtered results to >= ${minRating} stars.`, t));
-           }
+        ratingFilteredShops = distanceFilteredShops.filter(shop => {
+          // Ensure rating exists and meets the minimum requirement
+          return shop.rating !== undefined && shop.rating >= minRating;
+        });
+        console.log(`Filtered ${distanceFilteredShops.length} shops down to ${ratingFilteredShops.length} with min rating ${minRating}.`);
+        if (distanceFilteredShops.length > 0 && ratingFilteredShops.length < distanceFilteredShops.length) {
+          toast.success((t) => renderClosableToast(`Filtered results to >= ${minRating} stars.`, t));
+        }
       }
       // --- End Rating Filtering ---
 
+      let finalShopsToDisplay = ratingFilteredShops;
+      let fallbackMessage: string | null = null;
 
-      // Step 4: Apply Count Limit (Apply to rating-filtered results)
-      const countFilteredShops = requestedCount !== null && requestedCount < ratingFilteredShops.length
-        ? ratingFilteredShops.slice(0, requestedCount)
-        : ratingFilteredShops;
+      // --- Fallback Logic for "Open Now" ---
+      if (aiFilters?.openNow === true && finalShopsToDisplay.length === 0 && criteriaFilteredShops.length > 0) {
+        console.log("Open Now filter yielded 0 results. Applying fallback...");
+        // Re-filter the 'criteriaFilteredShops' (before openNow filter) for distance and rating only
+        let fallbackDistanceFiltered = criteriaFilteredShops;
+        if (requestedRadiusKm !== null) {
+          fallbackDistanceFiltered = criteriaFilteredShops.filter(shop => {
+            if (shop.lat && shop.lng) {
+              const distance = getDistanceFromLatLonInKm(lat, lng, shop.lat, shop.lng);
+              return distance <= requestedRadiusKm!;
+            }
+            return false;
+          });
+        }
+        let fallbackRatingFiltered = fallbackDistanceFiltered;
+        if (minRating !== null) {
+          fallbackRatingFiltered = fallbackDistanceFiltered.filter(shop => {
+            return shop.rating !== undefined && shop.rating >= minRating;
+          });
+        }
+
+        if (fallbackRatingFiltered.length > 0) {
+          finalShopsToDisplay = fallbackRatingFiltered; // Use the fallback results
+          fallbackMessage = "I couldn’t find an exact match for shops open right now, but based on nearby coffee shops, here are a few recommendations you might like:";
+          toast.success((t) => renderClosableToast(fallbackMessage!, t), { id: loadingToastId });
+        } else {
+          // Still no results even after fallback
+          toast.success((t) => renderClosableToast("No shops matched all criteria.", t), { id: loadingToastId });
+        }
+      } else if (finalShopsToDisplay.length === 0 && candidateShops.length > 0) {
+        // Standard "no results after filtering" message if fallback wasn't triggered or didn't help
+        toast.success((t) => renderClosableToast("No shops matched all criteria after filtering.", t), { id: loadingToastId });
+      } else if (!fallbackMessage) {
+        // Success message if results were found without fallback
+        toast.success((t) => renderClosableToast(`Found ${finalShopsToDisplay.length} shop(s).`, t), { id: loadingToastId });
+      }
+      // --- End Fallback Logic ---
+
+      // Step 4: Apply Count Limit (Apply to the final list, *unless* fallback already applied it)
+      // If fallback message exists, finalShopsToDisplay is already count-limited.
+      const countFilteredShops = requestedCount !== null && requestedCount < finalShopsToDisplay.length
+        ? finalShopsToDisplay.slice(0, requestedCount)
+        : finalShopsToDisplay;
 
       // Step 5: Update State & Center Map
       const finalShops = countFilteredShops; // Use the final filtered list
@@ -554,10 +620,10 @@ Respond ONLY with JSON that strictly follows one of these formats:
         setCurrentMapCenter({ lat: finalShops[0].lat, lng: finalShops[0].lng });
       }
 
-      // Final user feedback if zero results after filtering
-      if (finalShops.length === 0 && candidateShops.length > 0) {
-          toast.success((t) => renderClosableToast("No shops matched all criteria after filtering.", t));
-      }
+      // // Final user feedback if zero results after filtering - Handled within fallback logic now
+      // if (finalShops.length === 0 && candidateShops.length > 0 && !fallbackMessage) {
+      //     toast.success((t) => renderClosableToast("No shops matched all criteria after filtering.", t));
+      // }
 
     } catch (error: unknown) { // Use unknown
       const message = error instanceof Error ? error.message : 'Unknown processing error';
@@ -595,9 +661,9 @@ Respond ONLY with JSON that strictly follows one of these formats:
     setCoffeeShops([]);
     setSelectedLocation(null);
     if (userLocation) {
-        setCurrentMapCenter(userLocation);
+      setCurrentMapCenter(userLocation);
     } else {
-        setCurrentMapCenter({ lat: 24.1477, lng: 120.6736 });
+      setCurrentMapCenter({ lat: 24.1477, lng: 120.6736 });
     }
     toast((t) => renderClosableToast('Search reset.', t));
   };
@@ -632,14 +698,19 @@ Respond ONLY with JSON that strictly follows one of these formats:
         </div>
         {selectedLocation && (
           <LocationDetails
-             location={selectedLocation}
-             isFavorite={favoriteIds.has(selectedLocation.id)}
-             onToggleFavorite={handleToggleFavorite}
-             onClose={() => setSelectedLocation(null)}
+            location={selectedLocation}
+            isFavorite={favoriteIds.has(selectedLocation.id)}
+            onToggleFavorite={handleToggleFavorite}
+            onClose={() => setSelectedLocation(null)}
           />
         )}
       </div>
       <Toaster position="top-center" reverseOrder={false} />
+      {/* --- Social Vibe Message --- */}
+      {aiFilters?.socialVibe === true && finalShops.length > 0 && (
+        toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t))
+      )}
+      {/* --- End Social Vibe --- */}
     </>
   );
 }
