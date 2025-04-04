@@ -29,10 +29,11 @@ function deg2rad(deg: number): number {
 }
 // --- End Haversine ---
 
-// Helper function to check if a shop is open now, considering UTC offset
+// Helper function to check if a shop is open now
 const isShopOpenNow = (shop: CoffeeShop): boolean | undefined => {
+  // Fallback to simple open_now if periods or (now removed) utc_offset_minutes are missing
   if (!shop.opening_hours?.periods || shop.utc_offset_minutes === undefined) {
-    // If we don't have periods or offset, rely on the simple open_now flag (less accurate)
+    console.warn(`Using fallback open_now check for ${shop.name} due to missing periods or UTC offset.`);
     return shop.opening_hours?.open_now;
   }
 
@@ -179,9 +180,9 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
 };
 
 // --- Helper Function for Fetching Place Details ---
-// Always fetch rating, opening_hours, and utc_offset_minutes for filtering/display
-const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours,utc_offset_minutes';
-// Fields that *might* hint at amenities (Keep separate for clarity, though included in BASE now)
+// Always fetch rating and opening_hours for filtering/display. UTC offset is not directly supported via 'fields'.
+const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours';
+// Fields that *might* hint at amenities
 const WIFI_HINT_FIELDS = 'website,editorial_summary';
 const PETS_HINT_FIELDS = 'website,editorial_summary';
 const CHARGING_HINT_FIELDS = 'website,editorial_summary';
@@ -194,10 +195,20 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
     return null;
   }
 
-  // Combine base fields with required fields, removing duplicates
-  // Ensure BASE_DETAIL_FIELDS are always included
-  const uniqueFields = Array.from(new Set([...BASE_DETAIL_FIELDS.split(','), ...requiredFields])).join(',');
+  // Build the list of fields to request more directly
+  const fieldsToRequestSet = new Set(BASE_DETAIL_FIELDS.split(',')); // Start with base fields (Use const)
+
+  // Add required hint fields (like website, editorial_summary, reviews)
+  requiredFields.forEach(field => {
+    // Only add valid Google API fields, exclude simulation markers and the problematic one
+    if (!['wifi', 'charging', 'pets', 'utc_offset_minutes'].includes(field)) {
+       fieldsToRequestSet.add(field);
+    }
+  });
+
+  const uniqueFields = Array.from(fieldsToRequestSet).join(','); // Join the final list
   const apiUrl = `/maps-api/place/details/json?place_id=${placeId}&fields=${uniqueFields}`;
+  console.log(`[fetchPlaceDetails Simplified] Requesting fields for ${placeId}: ${uniqueFields}`); // Add log back for debugging
 
   try {
     const response = await fetch(apiUrl);
@@ -224,7 +235,7 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
         address: details.formatted_address || 'Address not available', // Use formatted_address
         rating: details.rating,
         opening_hours: details.opening_hours,
-        utc_offset_minutes: details.utc_offset_minutes, // Include offset
+        utc_offset_minutes: undefined, // Cannot fetch directly via fields param
         // --- Populate based on simulation or actual parsed data ---
         has_wifi: simulatedWifi, // Updated wifi_available
         pet_friendly: simulatedPets,
@@ -506,12 +517,12 @@ Respond ONLY with JSON that strictly follows one of these formats:
     let processedShops: CoffeeShop[] = [];
     const detailFieldsToFetch: string[] = [];
     // Determine required fields based *only* on amenity/menu hints, as base details are always fetched
-    // if (aiFilters?.openAfter || aiFilters?.openNow) detailFieldsToFetch.push(HOURS_FIELD); // Already in BASE_DETAIL_FIELDS
-    if (aiFilters?.wifi) { detailFieldsToFetch.push(WIFI_HINT_FIELDS); detailFieldsToFetch.push('wifi'); } // Keep hint fields
-    if (aiFilters?.charging) { detailFieldsToFetch.push(CHARGING_HINT_FIELDS); detailFieldsToFetch.push('charging'); } // Keep hint fields
-    if (aiFilters?.pets) { detailFieldsToFetch.push(PETS_HINT_FIELDS); detailFieldsToFetch.push('pets'); }
-    if (aiFilters?.menuItem) { detailFieldsToFetch.push(MENU_HINT_FIELDS); }
-    // Rating, opening_hours, utc_offset_minutes are always fetched via BASE_DETAIL_FIELDS
+    // Split hint fields before adding
+    if (aiFilters?.wifi) { detailFieldsToFetch.push(...WIFI_HINT_FIELDS.split(',')); detailFieldsToFetch.push('wifi'); } // Keep hint fields + marker
+    if (aiFilters?.charging) { detailFieldsToFetch.push(...CHARGING_HINT_FIELDS.split(',')); detailFieldsToFetch.push('charging'); } // Keep hint fields + marker
+    if (aiFilters?.pets) { detailFieldsToFetch.push(...PETS_HINT_FIELDS.split(',')); detailFieldsToFetch.push('pets'); } // Keep hint fields + marker
+    if (aiFilters?.menuItem) { detailFieldsToFetch.push(...MENU_HINT_FIELDS.split(',')); } // Keep hint fields
+    // Rating and opening_hours are always fetched via BASE_DETAIL_FIELDS
 
     // We *always* need details now for potential time zone / rating / distance filtering
     // const needsDetailsFetch = true; // Always fetch details - Removed as it's unused
