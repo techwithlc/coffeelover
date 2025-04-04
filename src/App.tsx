@@ -73,6 +73,7 @@ interface AiFilters {
   menuItem?: string; // e.g., "latte", "americano"
   quality?: string; // e.g., "best", "good", "quiet"
   distanceKm?: number | null; // Added for distance filter
+  minRating?: number | null; // Added for minimum rating filter
 }
 type AiResponse = | { related: true; keywords: string; count: number | null; filters: AiFilters | null } | { related: false; message: string; suggestion?: string };
 
@@ -127,7 +128,8 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters): CoffeeS
     if (filters.menuItem) console.warn(`Filtering by menu item "${filters.menuItem}" not fully implemented.`);
     if (filters.quality) console.warn(`Filtering by quality "${filters.quality}" not fully implemented.`);
 
-    return true; // Passed all applicable filters
+    // Note: minRating and distanceKm are handled in handleKeywordSearch after fetching
+    return true; // Passed all applicable filters handled here
   });
 };
 
@@ -313,9 +315,10 @@ function App() {
       const structuredPrompt = `Analyze the user request: "${prompt}".
 Is it about finding coffee shops/cafes, potentially in Europe or elsewhere?
 Respond ONLY with JSON that strictly follows one of these formats:
-1. If related to finding coffee shops: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null}|null}
+1. If related to finding coffee shops: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null, "minRating": num|null}|null}
    - Extract relevant keywords (e.g., "quiet cafe Paris", "coffee near me Berlin", "latte Rome"). Include location if mentioned. If specific items like "latte" or "americano" are mentioned, include them in keywords AND set "menuItem".
    - **Distance:** If the user specifies a distance (e.g., "within 5km", "10 miles nearby", "5 km radius"), extract the numeric value and set "distanceKm". Convert miles to km (1 mile = 1.60934 km). If no unit is specified, assume km. Set to null if no distance is mentioned.
+   - **Minimum Rating:** If the user specifies a minimum rating (e.g., "over 4 stars", "at least 4.5 stars", "4.5顆星以上"), extract the numeric rating value and set "minRating". Set to null if no minimum rating is mentioned.
    - **Open Hours:** If the user asks for places open "now", "currently", etc., set "openNow": true. If they ask for places open after a specific time (e.g., "after 10pm", "late night"), extract time as HH:MM (24h) for "openAfter". Assume "late" means 21:00. Set to null otherwise.
    - Extract boolean filters for "wifi", "charging" (power outlets), "pets" (pet friendly) if mentioned.
    - Extract specific quality terms like "best", "good", "quiet" into the "quality" filter. These primarily influence keywords but note them.
@@ -469,6 +472,13 @@ Respond ONLY with JSON that strictly follows one of these formats:
     if (aiFilters?.charging) { detailFieldsToFetch.push(CHARGING_HINT_FIELDS); detailFieldsToFetch.push('charging'); }
     if (aiFilters?.pets) { detailFieldsToFetch.push(PETS_HINT_FIELDS); detailFieldsToFetch.push('pets'); }
     if (aiFilters?.menuItem) { detailFieldsToFetch.push(MENU_HINT_FIELDS); }
+    // Always fetch rating if minRating filter might be applied
+    if (aiFilters?.minRating !== null) {
+        if (!detailFieldsToFetch.includes(BASE_DETAIL_FIELDS)) {
+             detailFieldsToFetch.push(BASE_DETAIL_FIELDS); // Ensure rating is fetched
+        }
+    }
+
 
     const needsDetailsFetch = detailFieldsToFetch.length > 0;
 
@@ -515,11 +525,27 @@ Respond ONLY with JSON that strictly follows one of these formats:
       }
       // --- End Distance Filtering ---
 
+      // --- Client-Side Rating Filtering ---
+      let ratingFilteredShops = distanceFilteredShops;
+      const minRating = aiFilters?.minRating ?? null;
+      if (minRating !== null) {
+          ratingFilteredShops = distanceFilteredShops.filter(shop => {
+              // Ensure rating exists and meets the minimum requirement
+              // Google Places API returns rating, so we check if it exists on the shop object
+              return shop.rating !== undefined && shop.rating >= minRating;
+          });
+          console.log(`Filtered ${distanceFilteredShops.length} shops down to ${ratingFilteredShops.length} with min rating ${minRating}.`);
+           if (distanceFilteredShops.length > 0 && ratingFilteredShops.length < distanceFilteredShops.length) {
+               toast.success((t) => renderClosableToast(`Filtered results to >= ${minRating} stars.`, t));
+           }
+      }
+      // --- End Rating Filtering ---
 
-      // Step 4: Apply Count Limit (Apply to distance-filtered results)
-      const countFilteredShops = requestedCount !== null && requestedCount < distanceFilteredShops.length
-        ? distanceFilteredShops.slice(0, requestedCount)
-        : distanceFilteredShops;
+
+      // Step 4: Apply Count Limit (Apply to rating-filtered results)
+      const countFilteredShops = requestedCount !== null && requestedCount < ratingFilteredShops.length
+        ? ratingFilteredShops.slice(0, requestedCount)
+        : ratingFilteredShops;
 
       // Step 5: Update State & Center Map
       const finalShops = countFilteredShops; // Use the final filtered list
