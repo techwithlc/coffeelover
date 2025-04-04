@@ -18,9 +18,12 @@ The application leverages React, TypeScript, and Vite for a fast and type-safe f
     *   Address, Description, Menu Highlights
     *   Amenities (Opening Hours, Price Range, Wi-Fi, Pet-Friendly - *data pending*)
 *   **User Reviews:** View existing reviews and submit new ones for each coffee shop. (Currently uses mock data, Supabase integration planned).
-*   **Natural Language Search:** Use the "Ask Coffeelover" search bar in the header. The AI extracts keywords from your query (e.g., "quiet cafes open late") and searches for matching shops using the Google Places API.
-*   **Favorites System:** Mark coffee shops as favorites (pins) directly without login. Favorites are saved locally in your browser using `localStorage`.
+*   **Natural Language Search:** Use the "Ask Coffeelover" search bar in the header. The AI extracts keywords, location, count, and filters (open hours, amenities, distance, minimum rating) from your query (e.g., "quiet cafes open late", "5 coffee shops near me with wifi over 4.5 stars", "cafes within 2km").
+    *   **Distance Search:** Specify a radius (e.g., "10km", "5 miles"). The backend proxy uses this for the initial search bias, and the frontend applies a strict distance filter to the results.
+    *   **Rating Filter:** Specify a minimum rating (e.g., "over 4 stars", "at least 4.5"). The frontend filters results to match.
+*   **Favorites System:** Mark coffee shops as favorites (red emoji pins) directly without login. Favorites are saved locally in your browser using `localStorage`.
 *   **Sharing:** Easily share coffee shop details via the Web Share API or by copying a link to the clipboard.
+*   **Enhanced Map Markers:** Markers are now larger coffee emojis (☕️), turning red for favorites and showing a "no entry" sign (🚫) for shops known to be closed (requires opening hours data).
 *   **Loading States:** Provides visual feedback while data (maps, shop details) is being loaded.
 *   **Responsive Design:** Adapts to different screen sizes (basic structure).
 
@@ -82,7 +85,7 @@ graph TD
 *   **AI:** Google Generative AI (`@google/generative-ai`)
 *   **UI Icons:** Lucide React
 *   **Notifications:** React Hot Toast
-*   **Schema Validation:** Zod (Used in `types.ts`)
+*   **Database:** Supabase (for schema migrations - `locations`, `reviews`, `favorites` tables; includes `has_wifi`, `has_chargers`, `charger_count` in `locations`)
 *   **Testing:** Vitest, React Testing Library (Setup present, tests need implementation)
 
 ---
