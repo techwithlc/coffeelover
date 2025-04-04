@@ -10,6 +10,26 @@ import type { CoffeeShop, OpeningHours, OpeningHoursPeriod } from './lib/types';
 import Header from './components/Header';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 
+// --- Haversine Distance Calculation ---
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Radius of the earth in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in km
+  return d;
+}
+
+function deg2rad(deg: number): number {
+  return deg * (Math.PI / 180);
+}
+// --- End Haversine ---
+
+
 // Initialize Gemini AI Client
 const apiKeyGemini = import.meta.env.VITE_GEMINI_API_KEY;
 let genAI: GoogleGenerativeAI | null = null;
@@ -52,6 +72,7 @@ interface AiFilters {
   pets?: boolean;
   menuItem?: string; // e.g., "latte", "americano"
   quality?: string; // e.g., "best", "good", "quiet"
+  distanceKm?: number | null; // Added for distance filter
 }
 type AiResponse = | { related: true; keywords: string; count: number | null; filters: AiFilters | null } | { related: false; message: string; suggestion?: string };
 
@@ -144,6 +165,10 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
       const simulatedCharging = requiredFields.includes('charging');
       // --- End Simulation ---
 
+      // NOTE: Amenity data (has_wifi, has_chargers, charger_count) is currently
+      // simulated based on whether the filter was requested (`requiredFields`).
+      // For accurate data, this needs to be fetched from a dedicated data source
+      // (e.g., your Supabase 'locations' table) and merged with Google Places results.
       return {
         id: details.place_id,
         name: details.name || 'N/A',
@@ -288,10 +313,10 @@ function App() {
       const structuredPrompt = `Analyze the user request: "${prompt}".
 Is it about finding coffee shops/cafes, potentially in Europe or elsewhere?
 Respond ONLY with JSON that strictly follows one of these formats:
-1. If related to finding coffee shops: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null}|null}
+1. If related to finding coffee shops: {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null}|null}
    - Extract relevant keywords (e.g., "quiet cafe Paris", "coffee near me Berlin", "latte Rome"). Include location if mentioned. If specific items like "latte" or "americano" are mentioned, include them in keywords AND set "menuItem".
-   - If the user asks for places open "now", "currently", etc., set "openNow": true.
-   - If the user asks for places open after a specific time (e.g., "after 10pm", "late night"), extract time as HH:MM (24h) for "openAfter". Assume "late" means 21:00.
+   - **Distance:** If the user specifies a distance (e.g., "within 5km", "10 miles nearby", "5 km radius"), extract the numeric value and set "distanceKm". Convert miles to km (1 mile = 1.60934 km). If no unit is specified, assume km. Set to null if no distance is mentioned.
+   - **Open Hours:** If the user asks for places open "now", "currently", etc., set "openNow": true. If they ask for places open after a specific time (e.g., "after 10pm", "late night"), extract time as HH:MM (24h) for "openAfter". Assume "late" means 21:00. Set to null otherwise.
    - Extract boolean filters for "wifi", "charging" (power outlets), "pets" (pet friendly) if mentioned.
    - Extract specific quality terms like "best", "good", "quiet" into the "quality" filter. These primarily influence keywords but note them.
    - Extract a specific number if requested (e.g., "find 3 cafes") for "count".
@@ -375,10 +400,14 @@ Respond ONLY with JSON that strictly follows one of these formats:
   };
 
   // --- Main Search and Filtering Logic ---
+  // Helper function to parse distance from AI filter (if needed elsewhere, keep DRY)
+  // Note: This is conceptual, the proxy handles the actual API radius parameter.
+  // We only need the distance value for client-side filtering.
+
   const handleKeywordSearch = async (
     keyword: string,
     requestedCount: number | null,
-    aiFilters: AiFilters | null,
+    aiFilters: AiFilters | null, // Contains distanceKm if parsed by AI
     loadingToastId: string | undefined
   ) => {
     setIsLoading(true);
@@ -394,7 +423,8 @@ Respond ONLY with JSON that strictly follows one of these formats:
     const searchLocation = userLocation ?? currentMapCenter;
     const lat = searchLocation.lat;
     const lng = searchLocation.lng;
-    const radius = 10000; // Use a reasonable radius
+    const requestedRadiusKm = aiFilters?.distanceKm ?? null; // Get distance from AI filters
+    console.log("Requested Radius for Filtering (km):", requestedRadiusKm);
 
     // Determine if openNow parameter can be used directly
     const useOpenNowParam = aiFilters?.openNow === true &&
@@ -402,7 +432,8 @@ Respond ONLY with JSON that strictly follows one of these formats:
       !aiFilters.pets && !aiFilters.menuItem && !aiFilters.quality;
 
     // Use Text Search API - more flexible for keywords
-    let searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&radius=${radius}&type=cafe`; // Added type=cafe
+    // The backend proxy will handle adding the radius parameter based on its parsing
+    let searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&type=cafe`; // Removed frontend radius
     if (useOpenNowParam) {
        searchApiUrl += '&opennow=true';
        console.log("Using opennow=true parameter in Text Search");
@@ -450,8 +481,8 @@ Respond ONLY with JSON that strictly follows one of these formats:
 
         console.log(`Fetched details for ${validDetailedShops.length} / ${candidateShops.length} shops.`);
         processedShops = aiFilters ? filterShopsByCriteria(validDetailedShops, aiFilters) : validDetailedShops;
+        toast.success((t) => renderClosableToast(`Found ${processedShops.length} potential shop(s) after detailed check.`, t), { id: loadingToastId }); // Updated message
 
-        toast.success((t) => renderClosableToast(`Found ${processedShops.length} shop(s) after detailed check.`, t), { id: loadingToastId });
       } else {
         // Map basic data if no details needed
         processedShops = candidateShops.map(place => ({
@@ -467,12 +498,31 @@ Respond ONLY with JSON that strictly follows one of these formats:
         toast.success((t) => renderClosableToast(`Found ${processedShops.length} initial result(s).`, t), { id: loadingToastId });
       }
 
-      // Step 4: Apply Count Limit
-      const finalShops = requestedCount !== null && requestedCount < processedShops.length
-        ? processedShops.slice(0, requestedCount)
-        : processedShops;
+      // --- Client-Side Distance Filtering ---
+      let distanceFilteredShops = processedShops;
+      if (requestedRadiusKm !== null) {
+          distanceFilteredShops = processedShops.filter(shop => {
+              if (shop.lat && shop.lng) {
+                  const distance = getDistanceFromLatLonInKm(lat, lng, shop.lat, shop.lng);
+                  return distance <= requestedRadiusKm!;
+              }
+              return false; // Exclude if shop has no coordinates
+          });
+          console.log(`Filtered ${processedShops.length} shops down to ${distanceFilteredShops.length} within ${requestedRadiusKm}km.`);
+          if (processedShops.length > 0 && distanceFilteredShops.length < processedShops.length) {
+               toast.success((t) => renderClosableToast(`Filtered results to within ${requestedRadiusKm}km.`, t));
+          }
+      }
+      // --- End Distance Filtering ---
+
+
+      // Step 4: Apply Count Limit (Apply to distance-filtered results)
+      const countFilteredShops = requestedCount !== null && requestedCount < distanceFilteredShops.length
+        ? distanceFilteredShops.slice(0, requestedCount)
+        : distanceFilteredShops;
 
       // Step 5: Update State & Center Map
+      const finalShops = countFilteredShops; // Use the final filtered list
       setCoffeeShops(finalShops);
       if (finalShops.length > 0 && finalShops[0].lat && finalShops[0].lng) {
         setCurrentMapCenter({ lat: finalShops[0].lat, lng: finalShops[0].lng });
