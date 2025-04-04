@@ -50,12 +50,15 @@ export default function Map({ center, locations, onMarkerClick, favoriteIds }: M
                     // clusterer={clusterer} // Keep clusterer commented out
                     icon={{
                       url: `data:image/svg+xml,${encodeURIComponent(
-                        // Use a text element for the emoji, apply favorite color
-                        `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-                           <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="24" fill="${isFavorite ? '#DC2626' : '#6B4F41'}">☕️</text>
+                        // Use a text element for the emoji, apply favorite color, check open status
+                        // NOTE: open_now status might be undefined if details weren't fetched
+                        `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+                           <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-size="30" fill="${isFavorite ? '#DC2626' : '#6B4F41'}">
+                             ${location.opening_hours?.open_now === false ? '🚫' : '☕️'}
+                           </text>
                          </svg>`
                       )}`,
-                      scaledSize: new google.maps.Size(32, 32), // Ensure size is consistent
+                      scaledSize: new google.maps.Size(40, 40), // Increased size
                     }}
                     onClick={() => onMarkerClick(location)}
                 />
