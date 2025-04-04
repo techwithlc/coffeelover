@@ -33,7 +33,7 @@ function deg2rad(deg: number): number {
 const isShopOpenNow = (shop: CoffeeShop): boolean | undefined => {
   // Fallback to simple open_now if periods or (now removed) utc_offset_minutes are missing
   if (!shop.opening_hours?.periods || shop.utc_offset_minutes === undefined) {
-    console.warn(`Using fallback open_now check for ${shop.name} due to missing periods or UTC offset.`);
+    // console.warn(`Using fallback open_now check for ${shop.name} due to missing periods or UTC offset.`);
     return shop.opening_hours?.open_now;
   }
 
@@ -82,7 +82,7 @@ if (apiKeyGemini) {
   genAI = new GoogleGenerativeAI(apiKeyGemini);
   model = genAI.getGenerativeModel({ model: "gemini-2.5-pro-exp-03-25" });
 } else {
-  console.error("Gemini API Key is missing!");
+  console.error("Gemini API Key is missing!"); // Keep this critical error log
 }
 
 // Google Places API Types (Simplified)
@@ -126,7 +126,7 @@ type AiResponse = | { related: true; keywords: string; count: number | null; fil
 
 // --- Helper Function for Filtering ---
 const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpenNow: boolean = true): CoffeeShop[] => {
-  console.log("Filtering shops based on AI criteria:", filters);
+  // console.log("Filtering shops based on AI criteria:", filters);
   return shops.filter(shop => {
     // Check openNow filter (client-side check if details were fetched for other reasons)
     if (checkOpenNow && filters.openNow === true) {
@@ -140,7 +140,7 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
       if (!shop.opening_hours?.periods) return false;
       const [filterHour, filterMinute] = filters.openAfter.split(':').map(Number);
       if (isNaN(filterHour) || isNaN(filterMinute)) {
-        console.warn(`Invalid openAfter time format: ${filters.openAfter}`);
+        // console.warn(`Invalid openAfter time format: ${filters.openAfter}`);
         return false;
       }
       const filterTimeMinutes = filterHour * 60 + filterMinute;
@@ -171,8 +171,8 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
     if (filters.pets === true && shop.pet_friendly !== true) return false;
 
     // Placeholder checks for menuItem and quality (primarily influence keywords)
-    if (filters.menuItem) console.warn(`Filtering by menu item "${filters.menuItem}" not fully implemented.`);
-    if (filters.quality) console.warn(`Filtering by quality "${filters.quality}" not fully implemented.`);
+    // if (filters.menuItem) console.warn(`Filtering by menu item "${filters.menuItem}" not fully implemented.`);
+    // if (filters.quality) console.warn(`Filtering by quality "${filters.quality}" not fully implemented.`);
 
     // Note: minRating and distanceKm are handled in handleKeywordSearch after fetching
     return true; // Passed all applicable filters handled here
@@ -191,7 +191,7 @@ const MENU_HINT_FIELDS = 'website,reviews'; // Reviews might mention items
 async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Promise<CoffeeShop | null> {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    console.error("Missing Google Maps API Key for Place Details fetch.");
+    console.error("Missing Google Maps API Key for Place Details fetch."); // Keep this critical error log
     return null;
   }
 
@@ -208,7 +208,7 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
 
   const uniqueFields = Array.from(fieldsToRequestSet).join(','); // Join the final list
   const apiUrl = `/maps-api/place/details/json?place_id=${placeId}&fields=${uniqueFields}`;
-  console.log(`[fetchPlaceDetails Simplified] Requesting fields for ${placeId}: ${uniqueFields}`); // Add log back for debugging
+  // console.log(`[fetchPlaceDetails Simplified] Requesting fields for ${placeId}: ${uniqueFields}`); // Removed log
 
   try {
     const response = await fetch(apiUrl);
@@ -247,12 +247,12 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
         menu_highlights: [], // Needs parsing logic if MENU_HINT_FIELDS used
       };
     } else {
-      console.error(`Place Details API Error for ${placeId}: ${data.status} - ${data.error_message || ''}`);
+      console.error(`Place Details API Error for ${placeId}: ${data.status} - ${data.error_message || ''}`); // Keep this error log
       return null;
     }
   } catch (error: unknown) { // Use unknown
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`Failed to fetch details for ${placeId}:`, message);
+    console.error(`Failed to fetch details for ${placeId}:`, message); // Keep this error log
     return null;
   }
 }
@@ -284,7 +284,7 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [currentAiFilters, setCurrentAiFilters] = useState<AiFilters | null>(null); // State for AI filters
+  // const [currentAiFilters, setCurrentAiFilters] = useState<AiFilters | null>(null); // Removed unused state
 
   const requestLocation = useCallback(async () => { // Make async for Permissions API
     if (!navigator.geolocation) {
@@ -301,8 +301,8 @@ function App() {
           return; // Don't proceed if already denied
         }
         // If 'prompt', it will ask the user. If 'granted', it will proceed.
-      } catch (permError) {
-        console.warn("Could not query geolocation permission status:", permError);
+      } catch { // Remove unused permError
+        // console.warn("Could not query geolocation permission status:", permError);
         // Proceed anyway, getCurrentPosition will handle the prompt/error
       }
     }
@@ -317,7 +317,7 @@ function App() {
         toast.success((t) => renderClosableToast("Location found! Map centered.", t), { id: loadingToast });
       },
       (error) => {
-        console.error("Geolocation error:", error);
+        console.error("Geolocation error:", error); // Keep this error log
         let message = "Failed to get location.";
         switch (error.code) {
           case error.PERMISSION_DENIED: message = "Location permission denied."; break;
@@ -341,7 +341,7 @@ function App() {
         if (Array.isArray(ids)) {
           setFavoriteIds(new Set(ids));
         }
-      } catch (e) { console.error("Failed to parse favorites", e); }
+      } catch (e) { console.error("Failed to parse favorites", e); } // Keep this error log
     }
   }, []);
 
@@ -412,7 +412,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
         }
       } catch (parseError: unknown) { // Use unknown
         const message = parseError instanceof Error ? parseError.message : 'Unknown parsing error';
-        console.error("AI response parsing/validation failed:", message, "Raw:", rawJsonResponse);
+        console.error("AI response parsing/validation failed:", message, "Raw:", rawJsonResponse); // Keep this error log
         toast.error((t) => renderClosableToast(`AI response error: ${message}`, t, 'error'), { id: loadingToastId });
         setIsGenerating(false);
         return;
@@ -442,15 +442,15 @@ Respond ONLY with JSON that strictly follows one of these formats:
           setIsGenerating(false);
         }
       } else {
-        const { message, suggestion } = parsedResponse;
-        console.log("AI determined query unrelated/ambiguous:", message, suggestion);
+        const { message } = parsedResponse; // Remove unused suggestion
+        // console.log("AI determined query unrelated/ambiguous:", message, suggestion);
         toast.error((t) => renderClosableToast(message, t, 'error'), { id: loadingToastId, duration: 5000 });
-        if (suggestion) console.log("AI Suggestion:", suggestion);
+        // if (suggestion) console.log("AI Suggestion:", suggestion);
       }
 
     } catch (error: unknown) { // Use unknown
       const message = error instanceof Error ? error.message : 'Unknown AI error';
-      console.error("Error calling Gemini API:", error);
+      console.error("Error calling Gemini API:", error); // Keep this error log
       toast.error((t) => renderClosableToast(`AI Error: ${message}`, t, 'error'), { id: loadingToastId });
     } finally {
       if (!aiResponseRelated) {
@@ -473,7 +473,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
     setIsLoading(true);
     setSelectedLocation(null);
     setCoffeeShops([]);
-    setCurrentAiFilters(aiFilters); // Store the received filters in state
+    // setCurrentAiFilters(aiFilters); // Removed unused state update
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
       toast.error((t) => renderClosableToast("Google Maps API Key is missing!", t, 'error'), { id: loadingToastId });
@@ -485,7 +485,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
     const lat = searchLocation.lat;
     const lng = searchLocation.lng;
     const requestedRadiusKm = aiFilters?.distanceKm ?? null; // Get distance from AI filters
-    console.log("Requested Radius for Filtering (km):", requestedRadiusKm);
+    // console.log("Requested Radius for Filtering (km):", requestedRadiusKm);
 
     // Use Text Search API - more flexible for keywords
     // The backend proxy will handle adding the radius parameter based on its parsing
@@ -508,7 +508,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
       }
     } catch (error: unknown) { // Use unknown
       const message = error instanceof Error ? error.message : 'Unknown search error';
-      console.error('Initial search failed:', error);
+      console.error('Initial search failed:', error); // Keep this error log
       toast.error((t) => renderClosableToast(`Initial search error: ${message}`, t, 'error'), { id: loadingToastId });
       setIsLoading(false); setIsGenerating(false); return;
     }
@@ -526,6 +526,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
 
     // We *always* need details now for potential time zone / rating / distance filtering
     // const needsDetailsFetch = true; // Always fetch details - Removed as it's unused
+    let finalShops: CoffeeShop[] = []; // Define finalShops here to be accessible in finally
 
     try {
       // Always fetch details now
@@ -533,17 +534,17 @@ Respond ONLY with JSON that strictly follows one of these formats:
       const detailPromises = candidateShops.map(candidate => fetchPlaceDetails(candidate.place_id, detailFieldsToFetch));
       const detailedResults = await Promise.all(detailPromises);
       processedShops = detailedResults.filter((shop): shop is CoffeeShop => shop !== null); // Initial list with details
-      console.log(`Fetched details for ${processedShops.length} / ${candidateShops.length} shops.`);
+      // console.log(`Fetched details for ${processedShops.length} / ${candidateShops.length} shops.`);
 
       // Apply non-geo/rating/openNow filters first (like amenities, openAfter)
       const criteriaFilteredShops = aiFilters ? filterShopsByCriteria(processedShops, aiFilters, false) : processedShops; // Pass false to skip openNow here
-      console.log(`Filtered ${processedShops.length} shops down to ${criteriaFilteredShops.length} based on criteria (excl. geo/rating/openNow).`);
+      // console.log(`Filtered ${processedShops.length} shops down to ${criteriaFilteredShops.length} based on criteria (excl. geo/rating/openNow).`);
 
       // --- Client-Side "Open Now" Filtering (Timezone Aware) ---
       let openNowFilteredShops = criteriaFilteredShops;
       if (aiFilters?.openNow === true) {
         openNowFilteredShops = criteriaFilteredShops.filter(shop => isShopOpenNow(shop) === true);
-        console.log(`Filtered ${criteriaFilteredShops.length} shops down to ${openNowFilteredShops.length} based on 'openNow'.`);
+        // console.log(`Filtered ${criteriaFilteredShops.length} shops down to ${openNowFilteredShops.length} based on 'openNow'.`);
       }
       // --- End "Open Now" Filtering ---
 
@@ -557,9 +558,9 @@ Respond ONLY with JSON that strictly follows one of these formats:
           }
           return false; // Exclude if shop has no coordinates
         });
-        console.log(`Filtered ${openNowFilteredShops.length} shops down to ${distanceFilteredShops.length} within ${requestedRadiusKm}km.`);
+        // console.log(`Filtered ${openNowFilteredShops.length} shops down to ${distanceFilteredShops.length} within ${requestedRadiusKm}km.`);
         if (openNowFilteredShops.length > 0 && distanceFilteredShops.length < openNowFilteredShops.length) {
-          toast.success((t) => renderClosableToast(`Filtered results to within ${requestedRadiusKm}km.`, t));
+          toast.success((t) => renderClosableToast(`Filtered results to within ${requestedRadiusKm}km.`, t)); // Keep this user-facing toast
         }
       }
       // --- End Distance Filtering ---
@@ -572,9 +573,9 @@ Respond ONLY with JSON that strictly follows one of these formats:
           // Ensure rating exists and meets the minimum requirement
           return shop.rating !== undefined && shop.rating >= minRating;
         });
-        console.log(`Filtered ${distanceFilteredShops.length} shops down to ${ratingFilteredShops.length} with min rating ${minRating}.`);
+        // console.log(`Filtered ${distanceFilteredShops.length} shops down to ${ratingFilteredShops.length} with min rating ${minRating}.`);
         if (distanceFilteredShops.length > 0 && ratingFilteredShops.length < distanceFilteredShops.length) {
-          toast.success((t) => renderClosableToast(`Filtered results to >= ${minRating} stars.`, t));
+          toast.success((t) => renderClosableToast(`Filtered results to >= ${minRating} stars.`, t)); // Keep this user-facing toast
         }
       }
       // --- End Rating Filtering ---
@@ -584,7 +585,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
 
       // --- Fallback Logic for "Open Now" ---
       if (aiFilters?.openNow === true && finalShopsToDisplay.length === 0 && criteriaFilteredShops.length > 0) {
-        console.log("Open Now filter yielded 0 results. Applying fallback...");
+        // console.log("Open Now filter yielded 0 results. Applying fallback...");
         // Re-filter the 'criteriaFilteredShops' (before openNow filter) for distance and rating only
         let fallbackDistanceFiltered = criteriaFilteredShops;
         if (requestedRadiusKm !== null) {
@@ -627,7 +628,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
         : finalShopsToDisplay;
 
       // Step 5: Update State & Center Map
-      const finalShops = countFilteredShops; // Use the final filtered list
+      finalShops = countFilteredShops; // Assign to the outer scope variable
       setCoffeeShops(finalShops);
       if (finalShops.length > 0 && finalShops[0].lat && finalShops[0].lng) {
         setCurrentMapCenter({ lat: finalShops[0].lat, lng: finalShops[0].lng });
@@ -640,11 +641,17 @@ Respond ONLY with JSON that strictly follows one of these formats:
 
     } catch (error: unknown) { // Use unknown
       const message = error instanceof Error ? error.message : 'Unknown processing error';
-      console.error('Error processing search:', error);
+      console.error('Error processing search:', error); // Keep this error log
       toast.error((t) => renderClosableToast(`Search processing error: ${message}`, t, 'error'), { id: loadingToastId });
     } finally {
       setIsLoading(false);
       setIsGenerating(false);
+      // --- Social Vibe Message (Moved Here) ---
+      // Use the 'finalShops' variable which is now accessible here
+      if (aiFilters?.socialVibe === true && finalShops.length > 0) {
+        toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t));
+      }
+      // --- End Social Vibe ---
     }
   };
 
@@ -673,7 +680,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
     setPrompt('');
     setCoffeeShops([]);
     setSelectedLocation(null);
-    setCurrentAiFilters(null); // Reset AI filters
+    // setCurrentAiFilters(null); // Removed unused state update
     if (userLocation) {
       setCurrentMapCenter(userLocation);
     } else {
@@ -720,11 +727,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
         )}
       </div>
       <Toaster position="top-center" reverseOrder={false} />
-      {/* --- Social Vibe Message --- */}
-      {currentAiFilters?.socialVibe === true && coffeeShops.length > 0 && (
-        toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t))
-      )}
-      {/* --- End Social Vibe --- */}
+      {/* Social Vibe Message moved to handleKeywordSearch finally block */}
     </>
   );
 }
