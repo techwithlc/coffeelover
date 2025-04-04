@@ -203,11 +203,27 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
-  const requestLocation = useCallback(() => {
+  const requestLocation = useCallback(async () => { // Make async for Permissions API
     if (!navigator.geolocation) {
       toast.error((t) => renderClosableToast("Geolocation is not supported by your browser.", t, 'error'));
       return;
     }
+
+    // Check permission status first (if Permissions API is supported)
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+        if (permissionStatus.state === 'denied') {
+          toast.error((t) => renderClosableToast("Location permission has been denied. Please check your browser settings.", t, 'error'));
+          return; // Don't proceed if already denied
+        }
+        // If 'prompt', it will ask the user. If 'granted', it will proceed.
+      } catch (permError) {
+        console.warn("Could not query geolocation permission status:", permError);
+        // Proceed anyway, getCurrentPosition will handle the prompt/error
+      }
+    }
+
     const loadingToast = toast.loading("Getting your location...");
     navigator.geolocation.getCurrentPosition(
       (position) => {
