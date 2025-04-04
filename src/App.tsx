@@ -273,6 +273,7 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentAiFilters, setCurrentAiFilters] = useState<AiFilters | null>(null); // State for AI filters
 
   const requestLocation = useCallback(async () => { // Make async for Permissions API
     if (!navigator.geolocation) {
@@ -461,6 +462,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
     setIsLoading(true);
     setSelectedLocation(null);
     setCoffeeShops([]);
+    setCurrentAiFilters(aiFilters); // Store the received filters in state
     const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
       toast.error((t) => renderClosableToast("Google Maps API Key is missing!", t, 'error'), { id: loadingToastId });
@@ -660,6 +662,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
     setPrompt('');
     setCoffeeShops([]);
     setSelectedLocation(null);
+    setCurrentAiFilters(null); // Reset AI filters
     if (userLocation) {
       setCurrentMapCenter(userLocation);
     } else {
@@ -707,7 +710,7 @@ Respond ONLY with JSON that strictly follows one of these formats:
       </div>
       <Toaster position="top-center" reverseOrder={false} />
       {/* --- Social Vibe Message --- */}
-      {aiFilters?.socialVibe === true && finalShops.length > 0 && (
+      {currentAiFilters?.socialVibe === true && coffeeShops.length > 0 && (
         toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t))
       )}
       {/* --- End Social Vibe --- */}

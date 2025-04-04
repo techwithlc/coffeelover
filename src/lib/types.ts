@@ -24,6 +24,7 @@ export interface CoffeeShop {
   lat?: number;
   lng?: number;
   opening_hours?: OpeningHours; // Use the detailed type
+  utc_offset_minutes?: number; // Added for timezone-aware open check
   price_range?: string;
   // wifi_available?: boolean; // Keep existing for now, map if needed later
   // pet_friendly?: boolean; // Keep existing for now, map if needed later
