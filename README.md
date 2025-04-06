@@ -25,6 +25,9 @@ The application leverages React, TypeScript, and Vite for a fast and type-safe f
 *   **Sharing:** Easily share coffee shop details via the Web Share API or by copying a link to the clipboard.
 *   **Enhanced Map Markers:** Markers are now larger coffee emojis (☕️), turning red for favorites and showing a "no entry" sign (🚫) for shops known to be closed (requires opening hours data).
 *   **Loading States:** Provides visual feedback while data (maps, shop details) is being loaded.
+*   **Wi-Fi Details:** View user-submitted Wi-Fi network details (SSID, password with visibility toggle, type) in the location details modal. Includes a disclaimer about accuracy.
+*   **Experience Ratings:** Logged-in users can submit 1-5 star ratings for Coffee Quality, Wi-Fi Speed/Stability, and optionally Staff Attractiveness for each location.
+*   **Smart Query Hints:** Clickable search suggestions (e.g., "Cafés with power outlets", "Stable Wi-Fi cafés") appear below the search bar to guide users.
 *   **Responsive Design:** Adapts to different screen sizes (basic structure).
 
 ## Component Architecture
@@ -85,7 +88,7 @@ graph TD
 *   **AI:** Google Generative AI (`@google/generative-ai`)
 *   **UI Icons:** Lucide React
 *   **Notifications:** React Hot Toast
-*   **Database:** Supabase (for schema migrations - `locations`, `reviews`, `favorites` tables; includes `has_wifi`, `has_chargers`, `charger_count` in `locations`)
+*   **Database:** Supabase (for schema migrations - `locations`, `reviews`, `favorites`, `location_wifi_details`, `location_ratings` tables; includes `has_wifi`, `has_chargers`, `charger_count` in `locations`)
 *   **Testing:** Vitest, React Testing Library (Setup present, tests need implementation)
 
 ---
