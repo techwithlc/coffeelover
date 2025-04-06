@@ -66,6 +66,7 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   const [wifiSubmitError, setWifiSubmitError] = useState<string | null>(null);
   const [wifiSubmitSuccess, setWifiSubmitSuccess] = useState<string | null>(null);
   const [showQrCode, setShowQrCode] = useState<Record<string, boolean>>({}); // State for QR code visibility
+  const [currentUserHasSubmittedWifi, setCurrentUserHasSubmittedWifi] = useState(false);
 
   // Helper to construct the PROXY URL for fetching the actual photo URL
   const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
@@ -157,10 +158,17 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
     };
 
     fetchWifiDetails();
-
-    // No need to fetch user ID here anymore, it's passed as a prop
-
   }, [location.id]);
+
+  // Separate effect to check if user has submitted, runs when wifiDetails or userId changes
+  useEffect(() => {
+    if (userId && wifiDetails.length > 0) {
+      const userSubmitted = wifiDetails.some(detail => detail.user_id === userId);
+      setCurrentUserHasSubmittedWifi(userSubmitted);
+    } else {
+      setCurrentUserHasSubmittedWifi(false); // Reset if user logs out or details are cleared
+    }
+  }, [wifiDetails, userId]);
 
 
   // Function to handle rating submission
@@ -248,9 +256,10 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
         throw error;
       }
 
-      // Add the new details to the top of the displayed list
+      // Add the new details to the top of the displayed list and mark as submitted
       if (data) {
          setWifiDetails(prev => [data as WifiDetail, ...prev]);
+         setCurrentUserHasSubmittedWifi(true); // User has now submitted
       }
 
       setWifiSubmitSuccess("Wi-Fi details submitted successfully!");
@@ -430,148 +439,185 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
             <h4 className="text-md font-semibold mb-3 flex items-center gap-2">
               <Wifi size={18} /> Wi-Fi Details
             </h4>
-            {isLoadingWifi ? (
+
+            {/* --- Conditional Rendering Logic for Wi-Fi Details --- */}
+            {!userId ? (
+              // Case 1: User not logged in
+              <p className="text-sm text-gray-500">Please log in to view or add Wi-Fi details.</p>
+            ) : isLoadingWifi ? (
+              // Case 2: Logged in, but data is loading
               <p className="text-sm text-gray-500">Loading Wi-Fi info...</p>
-            ) : wifiDetails.length > 0 ? (
-              <div className="space-y-3">
-                {wifiDetails.map((wifi) => {
-                  // Generate QR code string only for private networks with credentials
-                  const canGenerateQr = wifi.wifi_type === 'private' && wifi.ssid && wifi.password;
-                  const qrCodeValue = canGenerateQr
-                    ? `WIFI:T:WPA;S:${wifi.ssid};P:${wifi.password};;`
-                    : '';
+            ) : currentUserHasSubmittedWifi ? (
+              // Case 3: Logged in AND has submitted for this location
+              <>
+                {wifiDetails.length > 0 ? (
+                  // Sub-case 3a: Details exist, show the list
+                  <div className="space-y-3">
+                    {wifiDetails.map((wifi) => {
+                      // Generate QR code string only for private networks with credentials
+                      const canGenerateQr = wifi.wifi_type === 'private' && wifi.ssid && wifi.password;
+                      const qrCodeValue = canGenerateQr
+                        ? `WIFI:T:WPA;S:${wifi.ssid};P:${wifi.password};;`
+                        : '';
 
-                  return (
-                    <div key={wifi.id} className="p-3 bg-gray-50 rounded border text-sm">
-                      {wifi.ssid && <p><span className="font-medium">Network (SSID):</span> {wifi.ssid}</p>}
-                      {wifi.password && (
-                        <div className="flex items-center gap-2">
-                        <span className="font-medium">Password:</span>
-                        <span className={`flex-1 ${showPassword[wifi.id] ? '' : 'blur-sm select-none'}`}>
-                          {wifi.password}
-                        </span>
-                        <button
-                          onClick={() => setShowPassword(prev => ({ ...prev, [wifi.id]: !prev[wifi.id] }))}
-                          title={showPassword[wifi.id] ? 'Hide password' : 'Show password'}
-                          className="text-gray-500 hover:text-gray-700"
-                        >
-                          {showPassword[wifi.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                          </button>
-                        </div>
-                      )}
-                      {wifi.wifi_type && (
-                        <p><span className="font-medium">Type:</span> <span className="capitalize">{wifi.wifi_type?.replace('_', ' ')}</span></p>
-                      )}
-                      <div className="flex justify-between items-center mt-1">
-                        <p className="text-xs text-gray-500">Added: {new Date(wifi.created_at).toLocaleDateString()}</p>
-                        {/* QR Code Button/Display */}
-                        {canGenerateQr && (
-                          <div>
-                            <button
-                              onClick={() => setShowQrCode(prev => ({ ...prev, [wifi.id]: !prev[wifi.id] }))}
-                              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                              title={showQrCode[wifi.id] ? "Hide QR Code" : "Show QR Code"}
-                            >
-                              <QrCode size={14} /> {showQrCode[wifi.id] ? "Hide" : "QR"}
-                            </button>
+                      return (
+                        <div key={wifi.id} className="p-3 bg-gray-50 rounded border text-sm">
+                          {/* Wi-Fi Info */}
+                          {wifi.ssid && <p><span className="font-medium">Network (SSID):</span> {wifi.ssid}</p>}
+                          {wifi.password && (
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">Password:</span>
+                              <span className={`flex-1 ${showPassword[wifi.id] ? '' : 'blur-sm select-none'}`}>
+                                {wifi.password}
+                              </span>
+                              <button
+                                onClick={() => setShowPassword(prev => ({ ...prev, [wifi.id]: !prev[wifi.id] }))}
+                                title={showPassword[wifi.id] ? 'Hide password' : 'Show password'}
+                                className="text-gray-500 hover:text-gray-700"
+                              >
+                                {showPassword[wifi.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                              </button>
+                            </div>
+                          )}
+                          {wifi.wifi_type && (
+                            <p><span className="font-medium">Type:</span> <span className="capitalize">{wifi.wifi_type?.replace('_', ' ')}</span></p>
+                          )}
+                          <div className="flex justify-between items-center mt-1">
+                            <p className="text-xs text-gray-500">Added: {new Date(wifi.created_at).toLocaleDateString()}</p>
+                            {/* QR Code Button/Display */}
+                            {canGenerateQr && (
+                              <div>
+                                <button
+                                  onClick={() => setShowQrCode(prev => ({ ...prev, [wifi.id]: !prev[wifi.id] }))}
+                                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                  title={showQrCode[wifi.id] ? "Hide QR Code" : "Show QR Code"}
+                                >
+                                  <QrCode size={14} /> {showQrCode[wifi.id] ? "Hide" : "QR"}
+                                </button>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      {/* QR Code Canvas */}
-                      {canGenerateQr && showQrCode[wifi.id] && (
-                        <div className="mt-2 p-2 bg-white inline-block border rounded">
-                          <QRCodeCanvas value={qrCodeValue} size={128} />
-                           <p className="text-xs text-center mt-1 text-gray-600">Scan to connect</p>
+                          {/* QR Code Canvas */}
+                          {canGenerateQr && showQrCode[wifi.id] && (
+                            <div className="mt-2 p-2 bg-white inline-block border rounded">
+                              <QRCodeCanvas value={qrCodeValue} size={128} />
+                              <p className="text-xs text-center mt-1 text-gray-600">Scan to connect</p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-                 <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                   <AlertTriangle size={14} className="text-orange-500" />
-                   Wi-Fi details are user-submitted. Use with caution.
-                 </p>
-              </div>
+                      ); // Closing parenthesis for return statement inside map
+                    })}
+                    {/* Disclaimer shown only when list is displayed */}
+                    <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                      <AlertTriangle size={14} className="text-orange-500" />
+                      Wi-Fi details are user-submitted. Use with caution.
+                    </p>
+                  </div> // Closing div for space-y-3
+                ) : (
+                  // Sub-case 3b: User submitted, but somehow no details exist (edge case)
+                  <p className="text-sm text-gray-500">No Wi-Fi details found (including yours).</p>
+                )}
+              </> // Closing fragment for Case 3
             ) : (
-              <p className="text-sm text-gray-500">No Wi-Fi details submitted yet.</p>
+              // Case 4: Logged in BUT has NOT submitted for this location
+              <p className="text-sm text-gray-500">Submit the Wi-Fi details for this location to view information shared by others.</p>
             )}
+            {/* --- End Conditional Rendering --- */}
 
-            {/* Add/Show Wi-Fi Form Button */}
+
+            {/* Add/Show Wi-Fi Form Button & Form Container - Always show if logged in */}
             {userId && (
-              <button
-                onClick={() => setShowWifiForm(prev => !prev)}
-                className="mt-3 text-sm text-indigo-600 hover:text-indigo-800"
-              >
-                {showWifiForm ? 'Cancel' : '+ Add Wi-Fi Info'}
-              </button>
-            )}
+              <div className="mt-4"> {/* Container for button and form */}
+                {/* Show "Add" button only if form is hidden */}
+                {!showWifiForm && (
+                  <button
+                    onClick={() => setShowWifiForm(true)}
+                    className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Add Wi-Fi Info
+                  </button>
+                )}
 
-            {/* Wi-Fi Submission Form */}
-            {userId && showWifiForm && (
-              <form onSubmit={handleWifiSubmit} className="mt-4 p-4 border rounded bg-indigo-50 space-y-3">
-                 <h5 className="font-medium text-sm mb-2">Add New Wi-Fi Details</h5>
-                 <div>
-                   <label htmlFor="wifi_type" className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-                   <select
-                     id="wifi_type"
-                     value={newWifiType}
-                     onChange={(e) => setNewWifiType(e.target.value as 'public' | 'private' | 'ask_staff')}
-                     className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                   >
-                     <option value="ask_staff">Ask Staff</option>
-                     <option value="public">Public (No Password)</option>
-                     <option value="private">Private (Password Required)</option>
-                   </select>
-                 </div>
-                 {newWifiType === 'private' && (
-                   <>
-                     <div>
-                       <label htmlFor="ssid" className="block text-xs font-medium text-gray-700 mb-1">Network Name (SSID)</label>
-                       <input
-                         type="text"
-                         id="ssid"
-                         value={newSsid}
-                         onChange={(e) => setNewSsid(e.target.value)}
-                         className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                         required
-                       />
-                     </div>
-                     <div>
-                       <label htmlFor="password" className="block text-xs font-medium text-gray-700 mb-1">Password</label>
-                       <input
-                         type="text" // Consider type="password" but might hinder usability
-                         id="password"
-                         value={newPassword}
-                         onChange={(e) => setNewPassword(e.target.value)}
-                         className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                         required
-                       />
-                     </div>
-                   </>
-                 )}
-                 {newWifiType === 'public' && (
+                {/* Wi-Fi Submission Form */}
+                {showWifiForm && (
+                  <form onSubmit={handleWifiSubmit} className="mt-4 p-4 border rounded bg-indigo-50 space-y-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <h5 className="font-medium text-sm">Add New Wi-Fi Details</h5>
+                      <button
+                        type="button"
+                        onClick={() => setShowWifiForm(false)} // Close button
+                        className="text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                     <div>
-                       <label htmlFor="ssid_public" className="block text-xs font-medium text-gray-700 mb-1">Network Name (SSID) <span className="text-gray-500">(Optional)</span></label>
-                       <input
-                         type="text"
-                         id="ssid_public"
-                         value={newSsid}
-                         onChange={(e) => setNewSsid(e.target.value)}
-                         className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
-                       />
-                     </div>
-                 )}
-                 <button
-                   type="submit"
-                   disabled={isSubmittingWifi}
-                   className="w-full px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
-                 >
-                   {isSubmittingWifi ? 'Submitting...' : 'Submit Wi-Fi Info'}
-                 </button>
-                 {wifiSubmitError && <p className="text-red-600 text-xs mt-1">{wifiSubmitError}</p>}
-                 {wifiSubmitSuccess && <p className="text-green-600 text-xs mt-1">{wifiSubmitSuccess}</p>}
-              </form>
-            )}
+                      <label htmlFor="wifi_type" className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                      <select
+                        id="wifi_type"
+                        value={newWifiType}
+                        onChange={(e) => setNewWifiType(e.target.value as 'public' | 'private' | 'ask_staff')}
+                        className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        <option value="ask_staff">Ask Staff</option>
+                        <option value="public">Public (No Password)</option>
+                        <option value="private">Private (Password Required)</option>
+                      </select>
+                    </div>
+                    {newWifiType === 'private' && (
+                      <>
+                        <div>
+                          <label htmlFor="ssid" className="block text-xs font-medium text-gray-700 mb-1">Network Name (SSID)</label>
+                          <input
+                            type="text"
+                            id="ssid"
+                            value={newSsid}
+                            onChange={(e) => setNewSsid(e.target.value)}
+                            className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="password" className="block text-xs font-medium text-gray-700 mb-1">Password</label>
+                          <input
+                            type="text" // Consider type="password" but might hinder usability
+                            id="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            required
+                          />
+                        </div>
+                      </>
+                    )}
+                    {newWifiType === 'public' && (
+                       <div>
+                          <label htmlFor="ssid_public" className="block text-xs font-medium text-gray-700 mb-1">Network Name (SSID) <span className="text-gray-500">(Optional)</span></label>
+                          <input
+                            type="text"
+                            id="ssid_public"
+                            value={newSsid}
+                            onChange={(e) => setNewSsid(e.target.value)}
+                            className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                          />
+                        </div>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isSubmittingWifi}
+                      className="w-full px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {isSubmittingWifi ? 'Submitting...' : 'Submit Wi-Fi Info'}
+                    </button>
+                    {wifiSubmitError && <p className="text-red-600 text-xs mt-1">{wifiSubmitError}</p>}
+                    {wifiSubmitSuccess && <p className="text-green-600 text-xs mt-1">{wifiSubmitSuccess}</p>}
+                 </form>
+               )}
+             </div>
+           )}
           </div>
 
           {/* Experience Rating Section */}

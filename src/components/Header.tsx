@@ -52,10 +52,12 @@ const Header: React.FC<HeaderProps> = ({
         Coffeelover
       </button>
 
-      {/* Container for Search and Auth, allows wrapping */}
-      <div className="flex flex-wrap items-center gap-4 flex-grow justify-end md:justify-start min-w-0">
-        {/* Search Form - Allow growing */}
-        <form onSubmit={handlePromptSubmit} className="flex-grow w-full sm:w-auto min-w-[250px] md:min-w-[300px]"> {/* Adjusted min-width */}
+      {/* Container for Search and Auth */}
+      {/* Limit max width of this container on larger screens */}
+      <div className="flex flex-wrap items-center gap-4 flex-grow justify-end md:justify-start min-w-0 lg:max-w-3xl xl:max-w-4xl">
+        {/* Search Form - Allow growing but constrain */}
+        {/* Use max-w-lg or similar on the form itself */}
+        <form onSubmit={handlePromptSubmit} className="flex-grow w-full sm:w-auto min-w-[250px] md:min-w-[300px] max-w-full sm:max-w-md md:max-w-lg">
           <div className="flex items-center">
             {/* Location Button */}
             <button
