@@ -11,6 +11,13 @@ interface HeaderProps {
   onLogoClick: () => void; // Function to handle logo click
 }
 
+// Define the smart query hints
+const queryHints = [
+  "Cafés with power outlets",
+  "Stable Wi-Fi cafés",
+  "No time limit, sunny spots",
+];
+
 const Header: React.FC<HeaderProps> = ({
   prompt,
   setPrompt,
@@ -69,6 +76,20 @@ const Header: React.FC<HeaderProps> = ({
               'Ask'
             )}
           </button>
+        </div>
+        {/* Smart Query Hints */}
+        <div className="mt-2 flex flex-wrap gap-2 justify-start md:justify-start px-1 md:px-0">
+          {queryHints.map((hint) => (
+            <button
+              key={hint}
+              type="button" // Important: prevent form submission
+              onClick={() => setPrompt(hint)}
+              disabled={isGenerating}
+              className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              {hint}
+            </button>
+          ))}
         </div>
       </form>
     </header>

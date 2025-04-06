@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom'; // Import ReactDOM for Portals
-import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin, BatteryCharging } from 'lucide-react'; // Added MapPin, BatteryCharging
-// import { supabase } from '../lib/supabaseClient'; // Removed unused import
-import { CoffeeShop /*, Review */ } from '../lib/types'; // Remove unused Review type
-// import { mockReviews } from '../lib/mockData'; // Remove unused import
+import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin, BatteryCharging, Eye, EyeOff, AlertTriangle, Star, Coffee, User } from 'lucide-react'; // Added Star, Coffee, User icons
+import { supabase } from '../lib/supabaseClient'; // Corrected import name
+import { Database } from '../lib/database.types'; // Import generated types
+import { CoffeeShop } from '../lib/types';
 
 // Define structure for Place Details response
 interface PlaceDetailsResult {
@@ -33,6 +33,9 @@ interface PhotoProxyResponse {
   error?: string;
 }
 
+// Define type for Wi-Fi details fetched from Supabase
+type WifiDetail = Database['public']['Tables']['location_wifi_details']['Row'];
+
 interface Props {
   location: CoffeeShop;
   isFavorite: boolean;
@@ -44,6 +47,16 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   const [placeDetails, setPlaceDetails] = useState<PlaceDetailsResult | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(true);
+  const [wifiDetails, setWifiDetails] = useState<WifiDetail[]>([]);
+  const [isLoadingWifi, setIsLoadingWifi] = useState(true);
+  const [showPassword, setShowPassword] = useState<Record<string, boolean>>({}); // Store visibility per wifi entry
+  const [coffeeRating, setCoffeeRating] = useState<number | null>(null);
+  const [wifiRating, setWifiRating] = useState<number | null>(null);
+  const [staffRating, setStaffRating] = useState<number | null>(null); // Optional
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [ratingError, setRatingError] = useState<string | null>(null);
+  const [ratingSuccessMessage, setRatingSuccessMessage] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null); // To store logged-in user ID
 
   // Helper to construct the PROXY URL for fetching the actual photo URL
   const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
@@ -109,6 +122,91 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
       fetchPhoto();
     }
   }, [placeDetails]);
+
+  // Effect to fetch Wi-Fi Details from Supabase
+  useEffect(() => {
+    const fetchWifiDetails = async () => {
+      if (!location.id) return;
+      setIsLoadingWifi(true);
+      try {
+        const { data, error } = await supabase // Use correct client variable
+          .from('location_wifi_details')
+          .select('*')
+          .eq('location_id', location.id)
+          .order('created_at', { ascending: false }); // Get latest first
+
+        if (error) {
+          throw error;
+        }
+        setWifiDetails(data || []);
+      } catch (error) {
+        console.error('Error fetching Wi-Fi details:', error);
+        setWifiDetails([]); // Set empty on error
+      } finally {
+        setIsLoadingWifi(false);
+      }
+    };
+
+    fetchWifiDetails();
+
+    // Get current user ID for rating submission
+    const getCurrentUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUserId(session?.user?.id ?? null);
+    };
+    getCurrentUser();
+
+  }, [location.id]);
+
+
+  // Function to handle rating submission
+  const handleRatingSubmit = async () => {
+    if (!userId) {
+      setRatingError("You must be logged in to submit a rating.");
+      return;
+    }
+    if (coffeeRating === null || wifiRating === null) {
+      setRatingError("Please provide ratings for Coffee and Wi-Fi.");
+      return;
+    }
+
+    setIsSubmittingRating(true);
+    setRatingError(null);
+    setRatingSuccessMessage(null);
+
+    try {
+      const { error } = await supabase
+        .from('location_ratings')
+        .insert({
+          location_id: location.id,
+          user_id: userId,
+          coffee_rating: coffeeRating,
+          wifi_rating: wifiRating,
+          staff_rating: staffRating, // Will be null if not set
+        });
+
+      if (error) {
+        // Handle potential unique constraint violation if user already rated
+        if (error.code === '23505') { // PostgreSQL unique violation code
+           setRatingError("You have already rated this location.");
+        } else {
+          throw error;
+        }
+      } else {
+        setRatingSuccessMessage("Rating submitted successfully!");
+        // Optionally clear ratings after successful submission
+        // setCoffeeRating(null);
+        // setWifiRating(null);
+        // setStaffRating(null);
+      }
+    } catch (err) {
+      console.error('Error submitting rating:', err);
+      setRatingError("Failed to submit rating. Please try again.");
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
 
   const handleShare = () => {
     const shareUrl = `${window.location.origin}/shop/${location.id}`;
@@ -249,12 +347,7 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
                 <span className="text-sm">{location.price_range}</span>
               </div>
             )}
-            {location.has_wifi && ( // Updated property name
-              <div className="flex items-center gap-2">
-                <Wifi size={18} className="text-green-500" />
-                <span className="text-sm">Wi-Fi Available</span>
-              </div>
-            )}
+            {/* Wi-Fi section removed from here, will be added below */}
             {location.has_chargers && ( // Added charger info display
               <div className="flex items-center gap-2">
                 <BatteryCharging size={18} className="text-green-500" />
@@ -270,6 +363,133 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               </div>
             )}
           </div>
+
+          {/* Detailed Wi-Fi Information Section */}
+          <div className="mt-6 border-t pt-4">
+            <h4 className="text-md font-semibold mb-3 flex items-center gap-2">
+              <Wifi size={18} /> Wi-Fi Details
+            </h4>
+            {isLoadingWifi ? (
+              <p className="text-sm text-gray-500">Loading Wi-Fi info...</p>
+            ) : wifiDetails.length > 0 ? (
+              <div className="space-y-3">
+                {wifiDetails.map((wifi) => (
+                  <div key={wifi.id} className="p-3 bg-gray-50 rounded border text-sm">
+                    {wifi.ssid && <p><span className="font-medium">Network (SSID):</span> {wifi.ssid}</p>}
+                    {wifi.password && (
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Password:</span>
+                        <span className={`flex-1 ${showPassword[wifi.id] ? '' : 'blur-sm select-none'}`}>
+                          {wifi.password}
+                        </span>
+                        <button
+                          onClick={() => setShowPassword(prev => ({ ...prev, [wifi.id]: !prev[wifi.id] }))}
+                          title={showPassword[wifi.id] ? 'Hide password' : 'Show password'}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          {showPassword[wifi.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    )}
+                    {wifi.wifi_type && (
+                      <p><span className="font-medium">Type:</span> <span className="capitalize">{wifi.wifi_type.replace('_', ' ')}</span></p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Added: {new Date(wifi.created_at).toLocaleDateString()}</p>
+                  </div>
+                ))}
+                 <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                   <AlertTriangle size={14} className="text-orange-500" />
+                   Wi-Fi details are user-submitted and may not be accurate.
+                 </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No Wi-Fi details submitted yet.</p>
+            )}
+            {/* TODO: Add button/form to submit Wi-Fi details */}
+          </div>
+
+          {/* Experience Rating Section */}
+          {userId && ( // Only show rating form if user is logged in
+            <div className="mt-6 border-t pt-4">
+              <h4 className="text-md font-semibold mb-3">Rate Your Experience</h4>
+              <div className="space-y-4">
+                {/* Coffee Rating */}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Coffee size={16} /> Coffee Quality:</label>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setCoffeeRating(star)}
+                        className={`p-1 rounded transition-colors ${
+                          coffeeRating !== null && star <= coffeeRating
+                            ? 'text-yellow-500'
+                            : 'text-gray-300 hover:text-yellow-400'
+                        }`}
+                      >
+                        <Star size={20} fill={coffeeRating !== null && star <= coffeeRating ? 'currentColor' : 'none'} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Wi-Fi Rating */}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><Wifi size={16} /> Wi-Fi Speed/Stability:</label>
+                   <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setWifiRating(star)}
+                        className={`p-1 rounded transition-colors ${
+                          wifiRating !== null && star <= wifiRating
+                            ? 'text-yellow-500'
+                            : 'text-gray-300 hover:text-yellow-400'
+                        }`}
+                      >
+                        <Star size={20} fill={wifiRating !== null && star <= wifiRating ? 'currentColor' : 'none'} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Staff Rating (Optional) */}
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><User size={16} /> Staff Attractiveness <span className="text-xs text-gray-500">(Optional)</span>:</label>
+                   <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setStaffRating(star)}
+                        className={`p-1 rounded transition-colors ${
+                          staffRating !== null && star <= staffRating
+                            ? 'text-yellow-500'
+                            : 'text-gray-300 hover:text-yellow-400'
+                        }`}
+                      >
+                        <Star size={20} fill={staffRating !== null && star <= staffRating ? 'currentColor' : 'none'} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {/* Submit Button & Messages */}
+              <div className="mt-4">
+                <button
+                  onClick={handleRatingSubmit}
+                  disabled={isSubmittingRating || coffeeRating === null || wifiRating === null}
+                  className="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isSubmittingRating ? 'Submitting...' : 'Submit Rating'}
+                </button>
+                {ratingError && <p className="text-red-600 text-sm mt-2">{ratingError}</p>}
+                {ratingSuccessMessage && <p className="text-green-600 text-sm mt-2">{ratingSuccessMessage}</p>}
+              </div>
+            </div>
+          )}
+          {!userId && (
+             <p className="text-sm text-gray-600 mt-6 border-t pt-4">Please log in to rate this location.</p>
+          )}
+
+
           {location.description && (
             <p className="text-gray-700 mt-4">{location.description}</p>
           )}
