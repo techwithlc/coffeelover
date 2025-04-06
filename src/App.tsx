@@ -93,7 +93,12 @@ const renderClosableToast = (message: string, toastInstance: Toast, type: 'succe
   </div>
 );
 
-// Removed unused landingQueryHints definition
+// Define the example query hints for Landing Page (moved from global scope)
+const landingQueryHints = [
+  "Cafés with power outlets near Taipei 101",
+  "Stable Wi-Fi cafés Taichung",
+  "Coffee shops open now",
+];
 
 function App() {
   // State for view mode
@@ -153,8 +158,34 @@ function App() {
     setIsGenerating(true); setIsLoading(true); // Set both loading states
     let loadingToastId: string | undefined = undefined; let aiResponseRelated = false;
     try {
-      // Keep your detailed structured prompt for AI analysis
-      const structuredPrompt = `Analyze the user request: "${currentPrompt}" for finding coffee shops/cafes. Respond ONLY with JSON...`; // (Full prompt omitted for brevity but should be the same as before)
+      // Stricter AI Prompt Instructions - Emphasize EXACT format
+      const structuredPrompt = `Analyze the user request: "${currentPrompt}" for finding coffee shops/cafes.
+      Your response MUST be ONLY a JSON object. Do NOT include any text before or after the JSON object.
+      The JSON object MUST strictly follow one of these two formats:
+
+      1. If related to finding coffee shops:
+         {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null, "minRating": num|null, "socialVibe": bool|null}|null}
+         - "related" MUST be true.
+         - "keywords" MUST be a non-empty string containing relevant search terms (e.g., "quiet cafe Paris", "coffee near me Berlin", "latte Rome"). Include location if mentioned.
+         - "count" is the number of results requested (e.g., "5 cafes") or null.
+         - "filters" is an object containing boolean/string/number values for extracted criteria, or null if no filters.
+         - **Filters Details:**
+           - "openAfter": Time in HH:MM (24h) format (e.g., "21:00" for "late night") or null.
+           - "openNow": true if user asks for places open now/currently, otherwise null.
+           - "wifi", "charging", "pets": true if mentioned, otherwise null.
+           - "menuItem": Specific item like "latte", "croissant", or null.
+           - "quality": Terms like "best", "good", "quiet", or null.
+           - "distanceKm": Numeric distance in KM (convert miles if needed, 1 mile = 1.60934 km) or null.
+           - "minRating": Numeric rating (e.g., 4.0, 4.5) or null.
+           - "socialVibe": true if query implies trendy, popular, aesthetic, "pretty girls", etc., otherwise null.
+
+      2. If unrelated to finding coffee shops:
+         {"related": false, "message": "...", "suggestion": "..."|null}
+         - "related" MUST be false.
+         - "message" MUST be a non-empty string explaining the app's purpose.
+         - "suggestion" can be a relevant query suggestion string or null.
+
+      Ensure the output is ONLY the JSON object, starting with { and ending with }.`;
 
       loadingToastId = toast.loading("Asking AI assistant...");
       const result = await model.generateContent(structuredPrompt);
@@ -162,15 +193,43 @@ function App() {
       const rawJsonResponse = response.text().trim();
       let parsedResponse: AiResponse | null = null;
       try {
-        const jsonMatch = rawJsonResponse.match(/```json\s*([\s\S]*?)\s*```|({[\s\S]*})/);
-        if (!jsonMatch) throw new Error("No valid JSON found in AI response.");
-        const jsonString = jsonMatch[1] || jsonMatch[2];
-        const tempParsed = JSON.parse(jsonString);
-        if (tempParsed.related === true) { if (typeof tempParsed.keywords !== 'string' || !tempParsed.keywords.trim()) throw new Error("Missing or empty 'keywords'."); parsedResponse = tempParsed as AiResponse; }
-        else if (tempParsed.related === false) { if (typeof tempParsed.message !== 'string' || !tempParsed.message.trim()) throw new Error("Missing or empty 'message'."); parsedResponse = tempParsed as AiResponse; }
-        else { throw new Error("Invalid JSON structure: 'related' field missing or invalid."); }
-      } catch (parseError: unknown) { const message = parseError instanceof Error ? parseError.message : 'Unknown parsing error'; console.error("AI response parsing/validation failed:", message, "Raw:", rawJsonResponse); toast.error((t) => renderClosableToast(`AI response error: ${message}`, t, 'error'), { id: loadingToastId }); setIsGenerating(false); setIsLoading(false); return; }
+        // Attempt to parse directly, assuming AI followed instructions
+        parsedResponse = JSON.parse(rawJsonResponse);
 
+        // Validate the parsed structure
+        if (typeof parsedResponse?.related !== 'boolean') {
+          throw new Error("Invalid JSON structure: 'related' field missing or not a boolean.");
+        }
+        if (parsedResponse.related === true) {
+          if (typeof parsedResponse.keywords !== 'string' || !parsedResponse.keywords.trim()) throw new Error("Missing or empty 'keywords' for related query.");
+          // Add more checks for filters if needed
+        } else {
+          if (typeof parsedResponse.message !== 'string' || !parsedResponse.message.trim()) throw new Error("Missing or empty 'message' for unrelated query.");
+        }
+
+      } catch (parseError: unknown) {
+        const message = parseError instanceof Error ? parseError.message : 'Unknown parsing error';
+        console.error("AI response parsing/validation failed:", message, "Raw:", rawJsonResponse);
+        // Try to extract JSON from potential markdown code blocks as a fallback
+        try {
+            const jsonMatch = rawJsonResponse.match(/```json\s*([\s\S]*?)\s*```/);
+            if (jsonMatch && jsonMatch[1]) {
+                parsedResponse = JSON.parse(jsonMatch[1]);
+                 // Re-validate after extracting from markdown
+                 if (typeof parsedResponse?.related !== 'boolean') throw new Error("Invalid JSON structure (markdown): 'related' field missing or not a boolean.");
+                 // ... add other validation checks as above ...
+            } else {
+                 throw new Error("No valid JSON found, even in markdown."); // Throw if still not found
+            }
+        } catch (fallbackParseError: unknown) {
+             const fallbackMessage = fallbackParseError instanceof Error ? fallbackParseError.message : 'Unknown fallback parsing error';
+             console.error("Fallback JSON extraction failed:", fallbackMessage, "Raw:", rawJsonResponse);
+             toast.error((t) => renderClosableToast(`AI response error: ${fallbackMessage}`, t, 'error'), { id: loadingToastId });
+             setIsGenerating(false); setIsLoading(false); return;
+        }
+      }
+
+      // Proceed with validated parsedResponse
       if (parsedResponse.related === true) {
         aiResponseRelated = true;
         const { keywords, count, filters } = parsedResponse;
@@ -208,10 +267,17 @@ function App() {
   // Other Handlers
   const handleToggleFavorite = (shopId: string) => { /* ... (implementation kept) ... */
     setFavoriteIds(prevIds => { const newIds = new Set(prevIds); if (newIds.has(shopId)) { newIds.delete(shopId); toast.success((t) => renderClosableToast('Removed from favorites', t)); } else { newIds.add(shopId); toast.success((t) => renderClosableToast('Added to favorites', t)); } return newIds; });
-   };
-   const handleSelectLocation = (location: CoffeeShop) => { setSelectedLocation(location); };
-   const handleLogout = async () => { await supabase.auth.signOut(); };
-   // Removed unused handleResetSearch function
+  };
+  const handleSelectLocation = (location: CoffeeShop) => { setSelectedLocation(location); };
+  const handleLogout = async () => { await supabase.auth.signOut(); };
+  // Define handleResetSearch to be passed to Header
+  const handleResetSearch = () => {
+    setPrompt(''); setCoffeeShops([]); setSelectedLocation(null);
+    if (userLocation) { setCurrentMapCenter(userLocation); } else { setCurrentMapCenter({ lat: 24.1477, lng: 120.6736 }); }
+    toast((t) => renderClosableToast('Search reset.', t));
+    // Optionally switch back to landing page on reset from map view?
+    // setViewMode('landing'); // Keep user on map view after reset for now
+  };
 
 
   // --- Render Logic ---
