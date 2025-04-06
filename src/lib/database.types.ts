@@ -30,6 +30,82 @@ export type Database = {
         }
         Relationships: []
       }
+      location_ratings: {
+        Row: {
+          coffee_rating: number | null
+          created_at: string
+          id: string
+          location_id: string
+          staff_rating: number | null
+          user_id: string
+          wifi_rating: number | null
+        }
+        Insert: {
+          coffee_rating?: number | null
+          created_at?: string
+          id?: string
+          location_id: string
+          staff_rating?: number | null
+          user_id: string
+          wifi_rating?: number | null
+        }
+        Update: {
+          coffee_rating?: number | null
+          created_at?: string
+          id?: string
+          location_id?: string
+          staff_rating?: number | null
+          user_id?: string
+          wifi_rating?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "location_ratings_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      location_wifi_details: {
+        Row: {
+          created_at: string
+          id: string
+          location_id: string
+          password: string | null
+          ssid: string | null
+          user_id: string | null
+          wifi_type: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          location_id: string
+          password?: string | null
+          ssid?: string | null
+          user_id?: string | null
+          wifi_type?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          location_id?: string
+          password?: string | null
+          ssid?: string | null
+          user_id?: string | null
+          wifi_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "location_wifi_details_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       locations: {
         Row: {
           created_at: string | null

@@ -1,7 +1,11 @@
 import React from 'react';
-import { MapPinIcon } from '@heroicons/react/24/outline'; // Using Heroicons for the location icon
+import { MapPinIcon, UserCircleIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline'; // Added icons
+import type { Session } from '@supabase/supabase-js'; // Import Session type
+import { supabase } from '../lib/supabaseClient'; // Import supabase for logout
 
 interface HeaderProps {
+  session: Session | null; // Add session prop
+  onLoginClick: () => void; // Add login click handler prop
   prompt: string;
   setPrompt: (value: string) => void;
   isGenerating: boolean;
@@ -26,25 +30,35 @@ const Header: React.FC<HeaderProps> = ({
   requestLocation,
   hasLocation,
   onLogoClick,
+  session, // Destructure new props
+  onLoginClick, // Destructure new props
 }) => {
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    // Toast notification is handled by the listener in App.tsx
+  };
+
   return (
     // Stack vertically on small screens, horizontally on medium+
-    <header className="p-4 border-b bg-white shadow-sm flex flex-col md:flex-row items-center gap-4"> {/* Added gap */}
-      {/* Logo Button */}
-      <button
-        type="button"
+    <header className="p-4 border-b bg-white shadow-sm flex flex-col md:flex-row items-center gap-4 justify-between"> {/* Use justify-between */}
+      {/* Left side: Logo + Search */}
+      <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto flex-grow">
+        {/* Logo Button */}
+        <button
+          type="button"
         onClick={onLogoClick}
         className="text-xl font-bold text-blue-600 hover:text-blue-800 focus:outline-none"
         title="Reset Search"
       >
-        Coffeelover
-      </button>
+          Coffeelover
+        </button>
 
-      {/* Search Form - takes remaining space */}
-      <form onSubmit={handlePromptSubmit} className="flex-grow w-full md:w-auto">
-        <div className="flex items-center">
-          {/* Location Button */}
-          <button
+        {/* Search Form - takes remaining space */}
+        <form onSubmit={handlePromptSubmit} className="flex-grow w-full md:w-auto">
+          <div className="flex items-center">
+            {/* Location Button */}
+            <button
             type="button"
             onClick={requestLocation}
             title={hasLocation ? "Location acquired" : "Use current location"}
@@ -91,7 +105,34 @@ const Header: React.FC<HeaderProps> = ({
             </button>
           ))}
         </div>
-      </form>
+        </form>
+      </div>
+
+      {/* Right side: Auth Button */}
+      <div className="flex-shrink-0">
+        {session ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600 hidden md:inline">{session.user.email}</span>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors"
+              title="Logout"
+            >
+              <ArrowLeftOnRectangleIcon className="h-4 w-4" />
+              <span className="hidden md:inline">Logout</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onLoginClick}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
+            title="Login / Sign Up"
+          >
+            <UserCircleIcon className="h-5 w-5" />
+            <span className="hidden md:inline">Login</span>
+          </button>
+        )}
+      </div>
     </header>
   );
 };

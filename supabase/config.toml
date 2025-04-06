@@ -1,0 +1,45 @@
+# supabase/config.toml
+
+# The project_id is used to link your local development setup to the Supabase Platform.
+# Find it on your project's dashboard: https://app.supabase.com/projects/<project_id>
+project_id = "cwvcrjchbofrbsrboggk"
+
+[api]
+# Port to use for the API URL
+port = 54321
+# Schemas to expose in your API
+schemas = ["public", "storage", "graphql"]
+# Maximum size of POST request body in bytes
+max_rows = 1000
+
+[db]
+# Port to use for the local database URL
+port = 55324 # Trying another port
+# Apply new migrations after running `supabase db reset`
+major_version = 15
+
+[studio]
+# Port to use for Supabase Studio URL
+port = 54329
+
+# Email testing server
+[inbucket]
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+# When running `supabase start`, this image will be used to create the container.
+[auth.email.template.invite]
+subject = "You have been invited"
+
+[auth.email.template.confirmation]
+subject = "Confirm your signup"
+
+[auth.email.template.recovery]
+subject = "Reset your password"
+
+[auth.email.template.email_change]
+subject = "Confirm your email address change"
+
+[auth.email.template.magic_link]
+subject = "Your Magic Link"

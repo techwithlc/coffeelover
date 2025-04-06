@@ -3,12 +3,13 @@ import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import LocationDetails from './components/LocationDetails';
 import { Toaster, toast, Toast } from 'react-hot-toast'; // Import Toast type
-// Import corrected types
 import type { CoffeeShop, OpeningHours, OpeningHoursPeriod } from './lib/types';
-// import { supabase } from './lib/supabaseClient';
-// import { mockFavorites } from './lib/mockData';
+import { supabase } from './lib/supabaseClient'; // Import supabase client
 import Header from './components/Header';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { Auth } from '@supabase/auth-ui-react';
+import { ThemeSupa } from '@supabase/auth-ui-shared';
+import type { Session } from '@supabase/supabase-js';
 
 // --- Haversine Distance Calculation ---
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -284,7 +285,8 @@ function App() {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  // const [currentAiFilters, setCurrentAiFilters] = useState<AiFilters | null>(null); // Removed unused state
+  const [session, setSession] = useState<Session | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   const requestLocation = useCallback(async () => { // Make async for Permissions API
     if (!navigator.geolocation) {
@@ -343,6 +345,28 @@ function App() {
         }
       } catch (e) { console.error("Failed to parse favorites", e); } // Keep this error log
     }
+
+    // Set up Supabase auth listener
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (_event === 'SIGNED_IN') {
+        setShowAuthModal(false); // Close modal on successful sign-in
+        toast.success((t) => renderClosableToast('Logged in successfully!', t));
+      }
+       if (_event === 'SIGNED_OUT') {
+         toast.success((t) => renderClosableToast('Logged out.', t));
+       }
+    });
+
+    // Cleanup listener on unmount
+    return () => subscription.unsubscribe();
+
   }, []);
 
   // Effect to save favorites
@@ -693,6 +717,8 @@ Respond ONLY with JSON that strictly follows one of these formats:
     <>
       <div className="flex flex-col h-screen">
         <Header
+          session={session} // Pass session
+          onLoginClick={() => setShowAuthModal(true)} // Pass handler to open modal
           prompt={prompt}
           setPrompt={setPrompt}
           isGenerating={isGenerating}
@@ -723,11 +749,35 @@ Respond ONLY with JSON that strictly follows one of these formats:
             isFavorite={favoriteIds.has(selectedLocation.id)}
             onToggleFavorite={handleToggleFavorite}
             onClose={() => setSelectedLocation(null)}
+            userId={session?.user?.id ?? null} // Pass user ID
           />
         )}
       </div>
       <Toaster position="top-center" reverseOrder={false} />
-      {/* Social Vibe Message moved to handleKeywordSearch finally block */}
+
+      {/* Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 md:p-8 max-w-md w-full relative">
+             <button
+               onClick={() => setShowAuthModal(false)}
+               className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+               aria-label="Close login modal"
+             >
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+               </svg>
+             </button>
+            <Auth
+              supabaseClient={supabase}
+              appearance={{ theme: ThemeSupa }}
+              providers={['google', 'github']} // Add providers as needed
+              redirectTo={window.location.origin} // Redirect back after OAuth
+              theme="light"
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }

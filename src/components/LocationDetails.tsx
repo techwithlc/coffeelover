@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom'; // Import ReactDOM for Portals
-import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin, BatteryCharging, Eye, EyeOff, AlertTriangle, Star, Coffee, User } from 'lucide-react'; // Added Star, Coffee, User icons
+import { Heart, Clock, DollarSign, Wifi, PawPrint, ExternalLink, Globe, MapPin, BatteryCharging, Eye, EyeOff, AlertTriangle, Star, Coffee, User, QrCode } from 'lucide-react'; // Added QrCode icon
 import { supabase } from '../lib/supabaseClient'; // Corrected import name
 import { Database } from '../lib/database.types'; // Import generated types
+import { QRCodeCanvas } from 'qrcode.react'; // Import QR Code component
 import { CoffeeShop } from '../lib/types';
 
 // Define structure for Place Details response
@@ -41,9 +42,10 @@ interface Props {
   isFavorite: boolean;
   onToggleFavorite: (shopId: string) => void;
   onClose: () => void;
+  userId: string | null; // Add userId prop
 }
 
-export default function LocationDetails({ location, isFavorite, onToggleFavorite, onClose }: Props) {
+export default function LocationDetails({ location, isFavorite, onToggleFavorite, onClose, userId }: Props) { // Destructure userId
   const [placeDetails, setPlaceDetails] = useState<PlaceDetailsResult | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(true);
@@ -56,7 +58,14 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
   const [ratingSuccessMessage, setRatingSuccessMessage] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null); // To store logged-in user ID
+  const [showWifiForm, setShowWifiForm] = useState(false);
+  const [newSsid, setNewSsid] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newWifiType, setNewWifiType] = useState<'public' | 'private' | 'ask_staff'>('ask_staff');
+  const [isSubmittingWifi, setIsSubmittingWifi] = useState(false);
+  const [wifiSubmitError, setWifiSubmitError] = useState<string | null>(null);
+  const [wifiSubmitSuccess, setWifiSubmitSuccess] = useState<string | null>(null);
+  const [showQrCode, setShowQrCode] = useState<Record<string, boolean>>({}); // State for QR code visibility
 
   // Helper to construct the PROXY URL for fetching the actual photo URL
   const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
@@ -149,12 +158,7 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
 
     fetchWifiDetails();
 
-    // Get current user ID for rating submission
-    const getCurrentUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUserId(session?.user?.id ?? null);
-    };
-    getCurrentUser();
+    // No need to fetch user ID here anymore, it's passed as a prop
 
   }, [location.id]);
 
@@ -204,6 +208,63 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
       setRatingError("Failed to submit rating. Please try again.");
     } finally {
       setIsSubmittingRating(false);
+    }
+  };
+
+  // Function to handle Wi-Fi detail submission
+  const handleWifiSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userId) {
+      setWifiSubmitError("You must be logged in to submit Wi-Fi details.");
+      return;
+    }
+    if (!newSsid && newWifiType === 'private') {
+       setWifiSubmitError("SSID is required for private networks.");
+       return;
+    }
+     if (!newPassword && newWifiType === 'private') {
+       setWifiSubmitError("Password is required for private networks.");
+       return;
+     }
+
+    setIsSubmittingWifi(true);
+    setWifiSubmitError(null);
+    setWifiSubmitSuccess(null);
+
+    try {
+      const { data, error } = await supabase
+        .from('location_wifi_details')
+        .insert({
+          location_id: location.id,
+          user_id: userId,
+          ssid: newSsid || null, // Store empty string as null
+          password: newPassword || null, // Store empty string as null
+          wifi_type: newWifiType,
+        })
+        .select() // Select the newly inserted row
+        .single(); // Expect only one row
+
+      if (error) {
+        throw error;
+      }
+
+      // Add the new details to the top of the displayed list
+      if (data) {
+         setWifiDetails(prev => [data as WifiDetail, ...prev]);
+      }
+
+      setWifiSubmitSuccess("Wi-Fi details submitted successfully!");
+      // Reset form and hide it
+      setNewSsid('');
+      setNewPassword('');
+      setNewWifiType('ask_staff');
+      setShowWifiForm(false);
+
+    } catch (err) {
+      console.error('Error submitting Wi-Fi details:', err);
+      setWifiSubmitError("Failed to submit Wi-Fi details. Please try again.");
+    } finally {
+      setIsSubmittingWifi(false);
     }
   };
 
@@ -373,11 +434,18 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               <p className="text-sm text-gray-500">Loading Wi-Fi info...</p>
             ) : wifiDetails.length > 0 ? (
               <div className="space-y-3">
-                {wifiDetails.map((wifi) => (
-                  <div key={wifi.id} className="p-3 bg-gray-50 rounded border text-sm">
-                    {wifi.ssid && <p><span className="font-medium">Network (SSID):</span> {wifi.ssid}</p>}
-                    {wifi.password && (
-                      <div className="flex items-center gap-2">
+                {wifiDetails.map((wifi) => {
+                  // Generate QR code string only for private networks with credentials
+                  const canGenerateQr = wifi.wifi_type === 'private' && wifi.ssid && wifi.password;
+                  const qrCodeValue = canGenerateQr
+                    ? `WIFI:T:WPA;S:${wifi.ssid};P:${wifi.password};;`
+                    : '';
+
+                  return (
+                    <div key={wifi.id} className="p-3 bg-gray-50 rounded border text-sm">
+                      {wifi.ssid && <p><span className="font-medium">Network (SSID):</span> {wifi.ssid}</p>}
+                      {wifi.password && (
+                        <div className="flex items-center gap-2">
                         <span className="font-medium">Password:</span>
                         <span className={`flex-1 ${showPassword[wifi.id] ? '' : 'blur-sm select-none'}`}>
                           {wifi.password}
@@ -388,24 +456,122 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
                           className="text-gray-500 hover:text-gray-700"
                         >
                           {showPassword[wifi.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
+                          </button>
+                        </div>
+                      )}
+                      {wifi.wifi_type && (
+                        <p><span className="font-medium">Type:</span> <span className="capitalize">{wifi.wifi_type?.replace('_', ' ')}</span></p>
+                      )}
+                      <div className="flex justify-between items-center mt-1">
+                        <p className="text-xs text-gray-500">Added: {new Date(wifi.created_at).toLocaleDateString()}</p>
+                        {/* QR Code Button/Display */}
+                        {canGenerateQr && (
+                          <div>
+                            <button
+                              onClick={() => setShowQrCode(prev => ({ ...prev, [wifi.id]: !prev[wifi.id] }))}
+                              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                              title={showQrCode[wifi.id] ? "Hide QR Code" : "Show QR Code"}
+                            >
+                              <QrCode size={14} /> {showQrCode[wifi.id] ? "Hide" : "QR"}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {wifi.wifi_type && (
-                      <p><span className="font-medium">Type:</span> <span className="capitalize">{wifi.wifi_type.replace('_', ' ')}</span></p>
-                    )}
-                    <p className="text-xs text-gray-500 mt-1">Added: {new Date(wifi.created_at).toLocaleDateString()}</p>
-                  </div>
-                ))}
+                      {/* QR Code Canvas */}
+                      {canGenerateQr && showQrCode[wifi.id] && (
+                        <div className="mt-2 p-2 bg-white inline-block border rounded">
+                          <QRCodeCanvas value={qrCodeValue} size={128} />
+                           <p className="text-xs text-center mt-1 text-gray-600">Scan to connect</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
                  <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
                    <AlertTriangle size={14} className="text-orange-500" />
-                   Wi-Fi details are user-submitted and may not be accurate.
+                   Wi-Fi details are user-submitted. Use with caution.
                  </p>
               </div>
             ) : (
               <p className="text-sm text-gray-500">No Wi-Fi details submitted yet.</p>
             )}
-            {/* TODO: Add button/form to submit Wi-Fi details */}
+
+            {/* Add/Show Wi-Fi Form Button */}
+            {userId && (
+              <button
+                onClick={() => setShowWifiForm(prev => !prev)}
+                className="mt-3 text-sm text-indigo-600 hover:text-indigo-800"
+              >
+                {showWifiForm ? 'Cancel' : '+ Add Wi-Fi Info'}
+              </button>
+            )}
+
+            {/* Wi-Fi Submission Form */}
+            {userId && showWifiForm && (
+              <form onSubmit={handleWifiSubmit} className="mt-4 p-4 border rounded bg-indigo-50 space-y-3">
+                 <h5 className="font-medium text-sm mb-2">Add New Wi-Fi Details</h5>
+                 <div>
+                   <label htmlFor="wifi_type" className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                   <select
+                     id="wifi_type"
+                     value={newWifiType}
+                     onChange={(e) => setNewWifiType(e.target.value as 'public' | 'private' | 'ask_staff')}
+                     className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                   >
+                     <option value="ask_staff">Ask Staff</option>
+                     <option value="public">Public (No Password)</option>
+                     <option value="private">Private (Password Required)</option>
+                   </select>
+                 </div>
+                 {newWifiType === 'private' && (
+                   <>
+                     <div>
+                       <label htmlFor="ssid" className="block text-xs font-medium text-gray-700 mb-1">Network Name (SSID)</label>
+                       <input
+                         type="text"
+                         id="ssid"
+                         value={newSsid}
+                         onChange={(e) => setNewSsid(e.target.value)}
+                         className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                         required
+                       />
+                     </div>
+                     <div>
+                       <label htmlFor="password" className="block text-xs font-medium text-gray-700 mb-1">Password</label>
+                       <input
+                         type="text" // Consider type="password" but might hinder usability
+                         id="password"
+                         value={newPassword}
+                         onChange={(e) => setNewPassword(e.target.value)}
+                         className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                         required
+                       />
+                     </div>
+                   </>
+                 )}
+                 {newWifiType === 'public' && (
+                    <div>
+                       <label htmlFor="ssid_public" className="block text-xs font-medium text-gray-700 mb-1">Network Name (SSID) <span className="text-gray-500">(Optional)</span></label>
+                       <input
+                         type="text"
+                         id="ssid_public"
+                         value={newSsid}
+                         onChange={(e) => setNewSsid(e.target.value)}
+                         className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                       />
+                     </div>
+                 )}
+                 <button
+                   type="submit"
+                   disabled={isSubmittingWifi}
+                   className="w-full px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+                 >
+                   {isSubmittingWifi ? 'Submitting...' : 'Submit Wi-Fi Info'}
+                 </button>
+                 {wifiSubmitError && <p className="text-red-600 text-xs mt-1">{wifiSubmitError}</p>}
+                 {wifiSubmitSuccess && <p className="text-green-600 text-xs mt-1">{wifiSubmitSuccess}</p>}
+              </form>
+            )}
           </div>
 
           {/* Experience Rating Section */}

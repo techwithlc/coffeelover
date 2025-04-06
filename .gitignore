@@ -25,5 +25,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Media files
+*.mov
+*.mp4
+
 # Deployment files
 windsurf_deployment.yaml
