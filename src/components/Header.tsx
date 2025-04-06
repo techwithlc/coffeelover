@@ -1,23 +1,18 @@
 import React from 'react';
-import { MapPinIcon, UserCircleIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline'; // Added icons
-import type { Session } from '@supabase/supabase-js'; // Import Session type
-// Removed unused supabase import
-// import { supabase } from '../lib/supabaseClient';
+import { MapPinIcon } from '@heroicons/react/24/outline'; // Keep only needed icons
 
+// Remove Session type and auth-related props
 interface HeaderProps {
-  session: Session | null;
-  onLoginClick: () => void;
-  handleLogout: () => Promise<void>; // Add logout handler prop
   prompt: string;
   setPrompt: (value: string) => void;
   isGenerating: boolean;
   handlePromptSubmit: (e: React.FormEvent) => Promise<void>;
   requestLocation: () => void;
   hasLocation: boolean;
-  onLogoClick: () => void;
+  onLogoClick: () => void; // Keep logo click handler
 }
 
-// Define the smart query hints
+// Define the smart query hints (Keep)
 const queryHints = [
   "Cafés with power outlets",
   "Stable Wi-Fi cafés",
@@ -32,11 +27,8 @@ const Header: React.FC<HeaderProps> = ({
   requestLocation,
   hasLocation,
   onLogoClick,
-  session,
-  onLoginClick,
-  handleLogout, // Destructure logout handler
+  // Remove session, onLoginClick, handleLogout from destructuring
 }) => {
-  // Removed local handleLogout, use the one passed from App.tsx
 
   return (
     // Use flex-wrap and justify-between for responsiveness
@@ -51,10 +43,10 @@ const Header: React.FC<HeaderProps> = ({
         Coffeelover
       </button>
 
-      {/* Container for Search and Auth, allows wrapping */}
-      <div className="flex flex-wrap items-center gap-4 flex-grow justify-end md:justify-start min-w-0">
-        {/* Search Form - Allow growing */}
-        <form onSubmit={handlePromptSubmit} className="flex-grow w-full sm:w-auto min-w-[250px] md:min-w-[300px] max-w-full sm:max-w-md md:max-w-lg"> {/* Constrain max width */}
+      {/* Container for Search only - Allow it to grow and center its content */}
+      <div className="flex-grow flex justify-center min-w-0 px-4"> {/* Added padding */}
+        {/* Search Form - Allow growing up to a larger max-width */}
+        <form onSubmit={handlePromptSubmit} className="w-full max-w-2xl"> {/* Increased max-w */}
           <div className="flex items-center">
             {/* Location Button */}
             <button
@@ -105,33 +97,8 @@ const Header: React.FC<HeaderProps> = ({
             ))}
           </div>
         </form>
-
-        {/* Auth Section - Allow shrinking */}
-        <div className="flex-shrink-0">
-          {session ? (
-            <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600 hidden lg:inline">{session.user.email?.split('@')[0]}</span> {/* Hide email on smaller screens, show username part */}
-            <button
-              onClick={handleLogout} // Use passed handler
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors"
-              title="Logout"
-            >
-              <ArrowLeftOnRectangleIcon className="h-4 w-4" />
-              <span className="hidden sm:inline">Logout</span> {/* Show text on sm+ */}
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={onLoginClick}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors"
-              title="Login / Sign Up"
-            >
-              <UserCircleIcon className="h-5 w-5" />
-              <span className="hidden sm:inline">Login / Sign Up</span> {/* Show text on sm+ */}
-            </button>
-          )}
-        </div>
       </div>
+      {/* Removed Auth Section */}
     </header>
   );
 };
