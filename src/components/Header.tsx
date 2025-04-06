@@ -1,18 +1,20 @@
 import React from 'react';
 import { MapPinIcon, UserCircleIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline'; // Added icons
 import type { Session } from '@supabase/supabase-js'; // Import Session type
-import { supabase } from '../lib/supabaseClient'; // Import supabase for logout
+// Removed unused supabase import
+// import { supabase } from '../lib/supabaseClient';
 
 interface HeaderProps {
-  session: Session | null; // Add session prop
-  onLoginClick: () => void; // Add login click handler prop
+  session: Session | null;
+  onLoginClick: () => void;
+  handleLogout: () => Promise<void>; // Add logout handler prop
   prompt: string;
   setPrompt: (value: string) => void;
   isGenerating: boolean;
   handlePromptSubmit: (e: React.FormEvent) => Promise<void>;
-  requestLocation: () => void; // Function to request location
-  hasLocation: boolean; // Indicates if location is available
-  onLogoClick: () => void; // Function to handle logo click
+  requestLocation: () => void;
+  hasLocation: boolean;
+  onLogoClick: () => void;
 }
 
 // Define the smart query hints
@@ -30,14 +32,11 @@ const Header: React.FC<HeaderProps> = ({
   requestLocation,
   hasLocation,
   onLogoClick,
-  session, // Destructure new props
-  onLoginClick, // Destructure new props
+  session,
+  onLoginClick,
+  handleLogout, // Destructure logout handler
 }) => {
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    // Toast notification is handled by the listener in App.tsx
-  };
+  // Removed local handleLogout, use the one passed from App.tsx
 
   return (
     // Use flex-wrap and justify-between for responsiveness
@@ -52,12 +51,10 @@ const Header: React.FC<HeaderProps> = ({
         Coffeelover
       </button>
 
-      {/* Container for Search and Auth */}
-      {/* Limit max width of this container on larger screens */}
-      <div className="flex flex-wrap items-center gap-4 flex-grow justify-end md:justify-start min-w-0 lg:max-w-3xl xl:max-w-4xl">
-        {/* Search Form - Allow growing but constrain */}
-        {/* Use max-w-lg or similar on the form itself */}
-        <form onSubmit={handlePromptSubmit} className="flex-grow w-full sm:w-auto min-w-[250px] md:min-w-[300px] max-w-full sm:max-w-md md:max-w-lg">
+      {/* Container for Search and Auth, allows wrapping */}
+      <div className="flex flex-wrap items-center gap-4 flex-grow justify-end md:justify-start min-w-0">
+        {/* Search Form - Allow growing */}
+        <form onSubmit={handlePromptSubmit} className="flex-grow w-full sm:w-auto min-w-[250px] md:min-w-[300px] max-w-full sm:max-w-md md:max-w-lg"> {/* Constrain max width */}
           <div className="flex items-center">
             {/* Location Button */}
             <button
@@ -113,14 +110,14 @@ const Header: React.FC<HeaderProps> = ({
         <div className="flex-shrink-0">
           {session ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600 hidden lg:inline">{session.user.email}</span> {/* Hide email on smaller screens */}
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors"
-                title="Logout"
-              >
-                <ArrowLeftOnRectangleIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Logout</span> {/* Show text on sm+ */}
+            <span className="text-sm text-gray-600 hidden lg:inline">{session.user.email?.split('@')[0]}</span> {/* Hide email on smaller screens, show username part */}
+            <button
+              onClick={handleLogout} // Use passed handler
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors"
+              title="Logout"
+            >
+              <ArrowLeftOnRectangleIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Logout</span> {/* Show text on sm+ */}
               </button>
             </div>
           ) : (
@@ -130,7 +127,7 @@ const Header: React.FC<HeaderProps> = ({
               title="Login / Sign Up"
             >
               <UserCircleIcon className="h-5 w-5" />
-              <span className="hidden sm:inline">Login</span> {/* Show text on sm+ */}
+              <span className="hidden sm:inline">Login / Sign Up</span> {/* Show text on sm+ */}
             </button>
           )}
         </div>
