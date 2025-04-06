@@ -15,8 +15,9 @@ interface LandingPageProps {
   landingPrompt: string;
   setLandingPrompt: (value: string) => void;
   handleLandingSearchSubmit: (e: FormEvent) => void;
-  handleHintClick: (hint: string) => void; // Re-use hint logic if needed, or adapt
-  isLoading: boolean; // Combined loading state
+  handleHintClick: (hint: string) => void;
+  isLoading: boolean;
+  requestLocation: () => void; // Add location request handler prop
 }
 
 const LandingPage: React.FC<LandingPageProps> = ({
@@ -26,8 +27,9 @@ const LandingPage: React.FC<LandingPageProps> = ({
   landingPrompt,
   setLandingPrompt,
   handleLandingSearchSubmit,
-  handleHintClick, // Receive hint handler
+  handleHintClick,
   isLoading,
+  requestLocation, // Destructure location handler
 }) => {
   return (
     <main className="flex flex-col items-center justify-center p-4 bg-gradient-to-br from-blue-100 via-purple-100 to-indigo-200 relative" style={{ minHeight: '100vh' }}>
@@ -69,7 +71,20 @@ const LandingPage: React.FC<LandingPageProps> = ({
         {/* Landing Search Form */}
         <form onSubmit={handleLandingSearchSubmit} className="w-full max-w-2xl mx-auto mb-4">
           <div className="flex items-center bg-white p-2 rounded-full shadow-xl border border-gray-200">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400 mx-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}> <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /> </svg>
+             {/* Location Button (Optional, placed inside the search bar) */}
+             <button
+                type="button"
+                onClick={requestLocation}
+                title={"Use current location"}
+                className={`p-2 mx-1 rounded-full border bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-300`}
+                disabled={isLoading}
+              >
+                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                   <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
+                 </svg>
+             </button>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400 mx-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}> <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /> </svg>
             <input
               type="text"
               value={landingPrompt}

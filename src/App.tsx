@@ -63,7 +63,7 @@ interface AiFilters { openAfter?: string | null; openNow?: boolean; wifi?: boole
 type AiResponse = | { related: true; keywords: string; count: number | null; filters: AiFilters | null } | { related: false; message: string; suggestion?: string };
 
 // --- Helper Function for Filtering ---
-const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpenNow: boolean = true): CoffeeShop[] => { /* ... (implementation kept) ... */
+const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpenNow: boolean = true): CoffeeShop[] => {
   return shops.filter(shop => {
     if (checkOpenNow && filters.openNow === true) { if (isShopOpenNow(shop) === false) return false; }
     if (filters.openAfter) { if (!shop.opening_hours?.periods) return false; const [filterHour, filterMinute] = filters.openAfter.split(':').map(Number); if (isNaN(filterHour) || isNaN(filterMinute)) return false; const filterTimeMinutes = filterHour * 60 + filterMinute; const isOpenLateEnough = shop.opening_hours.periods.some((period: OpeningHoursPeriod) => { if (period?.close?.time && /^\d{4}$/.test(period.close.time)) { const closeHour = parseInt(period.close.time.substring(0, 2), 10); const closeMinute = parseInt(period.close.time.substring(2, 4), 10); let closeTimeMinutes = closeHour * 60 + closeMinute; if (period.open?.day !== undefined && period.close.day !== undefined && (period.close.day > period.open.day || (period.close.day === 0 && period.open.day === 6))) { closeTimeMinutes += 24 * 60; } return closeTimeMinutes >= filterTimeMinutes; } if (!period.close && period.open?.time === '0000') return true; return false; }); if (!isOpenLateEnough) return false; }
@@ -74,31 +74,37 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
 // --- Helper Function for Fetching Place Details ---
 const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours';
 const WIFI_HINT_FIELDS = 'website,editorial_summary'; const PETS_HINT_FIELDS = 'website,editorial_summary'; const CHARGING_HINT_FIELDS = 'website,editorial_summary'; const MENU_HINT_FIELDS = 'website,reviews';
-async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Promise<CoffeeShop | null> { /* ... (implementation kept, including DB fetch) ... */
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY; if (!apiKey) { console.error("Missing Google Maps API Key for Place Details fetch."); return null; }
+async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Promise<CoffeeShop | null> {
+  const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY; if (!googleApiKey) { console.error("Missing Google Maps API Key for Place Details fetch."); return null; }
+  // Check if Supabase client seems valid before querying DB
+  if (!supabase || !supabase.from) {
+      console.error("Supabase client not initialized correctly in fetchPlaceDetails.");
+  }
+
   const fieldsToRequestSet = new Set(BASE_DETAIL_FIELDS.split(',')); requiredFields.forEach(field => { if (!['wifi', 'charging', 'pets', 'utc_offset_minutes'].includes(field)) { fieldsToRequestSet.add(field); } });
   const uniqueFields = Array.from(fieldsToRequestSet).join(','); const apiUrl = `/maps-api/place/details/json?place_id=${placeId}&fields=${uniqueFields}`;
   try { const response = await fetch(apiUrl); if (!response.ok) throw new Error(`Place Details API HTTP error! status: ${response.status}`); const data: PlaceDetailsResponse = await response.json();
-    if (data.status === 'OK' && data.result) { const details = data.result; const { data: dbData, error: dbError } = await supabase.from('locations').select('has_wifi, has_chargers, charger_count, pet_friendly').eq('id', details.place_id).single(); if (dbError) { console.warn(`Could not fetch DB data for ${details.place_id}:`, dbError.message); }
+    if (data.status === 'OK' && data.result) { const details = data.result; let dbData: Partial<CoffeeShop> | null = null; let dbError: unknown = null; // Use unknown type
+      if (supabase && supabase.from) { // Query only if client is valid
+        const { data: fetchedDbData, error: fetchDbError } = await supabase.from('locations').select('has_wifi, has_chargers, charger_count, pet_friendly').eq('id', details.place_id).maybeSingle();
+        dbData = fetchedDbData; dbError = fetchDbError;
+        // Log Supabase errors more informatively, ignoring "No rows found" which is expected if not in DB
+        if (dbError && (dbError as any).code !== 'PGRST116') { // Type assertion for code check
+           console.error(`Supabase query error for ${details.place_id}:`, dbError); // Log the full error
+        }
+      }
       return { id: details.place_id, name: details.name || 'N/A', lat: details.geometry?.location.lat, lng: details.geometry?.location.lng, address: details.formatted_address || 'Address not available', rating: details.rating, opening_hours: details.opening_hours, utc_offset_minutes: undefined, has_wifi: dbData?.has_wifi ?? false, pet_friendly: dbData?.pet_friendly ?? false, has_chargers: dbData?.has_chargers ?? false, charger_count: dbData?.charger_count ?? 0, price_range: details.price_level?.toString(), description: details.editorial_summary?.overview, menu_highlights: [], };
     } else { console.error(`Place Details API Error for ${placeId}: ${data.status} - ${data.error_message || ''}`); return null; }
   } catch (error: unknown) { const message = error instanceof Error ? error.message : 'Unknown error'; console.error(`Failed to fetch details for ${placeId}:`, message); return null; }
 }
 
 // --- Custom Toast Renderer ---
-const renderClosableToast = (message: string, toastInstance: Toast, type: 'success' | 'error' = 'success') => ( /* ... (implementation kept) ... */
+const renderClosableToast = (message: string, toastInstance: Toast, type: 'success' | 'error' = 'success') => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
     <span style={{ marginRight: '10px' }}>{message}</span>
     <button onClick={() => toast.dismiss(toastInstance.id)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1em', lineHeight: '1', padding: '0 4px', color: type === 'error' ? '#DC2626' : '#10B981' }} aria-label="Close" > &times; </button>
   </div>
 );
-
-// Define the example query hints for Landing Page (moved from global scope)
-const landingQueryHints = [
-  "Cafés with power outlets near Taipei 101",
-  "Stable Wi-Fi cafés Taichung",
-  "Coffee shops open now",
-];
 
 function App() {
   // State for view mode
@@ -124,14 +130,14 @@ function App() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   // --- Handlers ---
-  const requestLocation = useCallback(async () => { /* ... (implementation kept) ... */
+  const requestLocation = useCallback(async () => {
     if (!navigator.geolocation) { toast.error((t) => renderClosableToast("Geolocation is not supported by your browser.", t, 'error')); return; }
     if (navigator.permissions && navigator.permissions.query) { try { const permissionStatus = await navigator.permissions.query({ name: 'geolocation' }); if (permissionStatus.state === 'denied') { toast.error((t) => renderClosableToast("Location permission denied.", t, 'error')); return; } } catch (permError) { console.warn("Could not query geolocation permission status:", permError); } }
     const loadingToast = toast.loading("Getting your location..."); navigator.geolocation.getCurrentPosition( (position) => { const { latitude, longitude } = position.coords; const newLocation = { lat: latitude, lng: longitude }; setUserLocation(newLocation); setCurrentMapCenter(newLocation); toast.success((t) => renderClosableToast("Location found! Map centered.", t), { id: loadingToast }); }, (error) => { console.error("Geolocation error:", error); let message = "Failed to get location."; switch (error.code) { case error.PERMISSION_DENIED: message = "Location permission denied."; break; case error.POSITION_UNAVAILABLE: message = "Location information is currently unavailable."; break; case error.TIMEOUT: message = "Location request timed out."; break; } toast.error((t) => renderClosableToast(message, t, 'error'), { id: loadingToast }); setUserLocation(null); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 } );
   }, []);
 
   // Auth Listener & Favorites Loading
-  useEffect(() => { /* ... (implementation kept) ... */
+  useEffect(() => {
     const savedFavorites = localStorage.getItem('coffeeLoverFavorites'); if (savedFavorites) { try { const ids = JSON.parse(savedFavorites); if (Array.isArray(ids)) { setFavoriteIds(new Set(ids)); } } catch (e) { console.error("Failed to parse favorites", e); } }
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); }); const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if (_event === 'SIGNED_IN') { setShowAuthModal(false); toast.success((t) => renderClosableToast('Logged in successfully!', t)); } if (_event === 'SIGNED_OUT') { toast.success((t) => renderClosableToast('Logged out.', t)); } }); return () => subscription.unsubscribe();
   }, []);
@@ -140,7 +146,7 @@ function App() {
   useEffect(() => { localStorage.setItem('coffeeLoverFavorites', JSON.stringify(Array.from(favoriteIds))); }, [favoriteIds]);
 
   // AI Search & Filtering Logic (used by both Header and Landing Page submit)
-  const handleKeywordSearch = async ( keyword: string, requestedCount: number | null, aiFilters: AiFilters | null, loadingToastId: string | undefined ) => { /* ... (implementation kept) ... */
+  const handleKeywordSearch = async ( keyword: string, requestedCount: number | null, aiFilters: AiFilters | null, loadingToastId: string | undefined ) => {
     setIsLoading(true); setSelectedLocation(null); setCoffeeShops([]); const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY; if (!apiKey) { toast.error((t) => renderClosableToast("Google Maps API Key is missing!", t, 'error'), { id: loadingToastId }); setIsLoading(false); setIsGenerating(false); return; }
     let candidateShops: PlaceResult[] = []; const searchLocation = userLocation ?? currentMapCenter; const lat = searchLocation.lat; const lng = searchLocation.lng; const requestedRadiusKm = aiFilters?.distanceKm ?? null; const searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&type=cafe`;
     try { const response = await fetch(searchApiUrl); if (!response.ok) throw new Error(`Search API HTTP error! status: ${response.status}`); const data: PlacesNearbyResponse = await response.json(); if (data.status === 'OK') { candidateShops = data.results; } else if (data.status === 'ZERO_RESULTS') { toast.success((t) => renderClosableToast(`No initial results found for "${keyword}".`, t), { id: loadingToastId }); setIsLoading(false); setIsGenerating(false); return; } else { throw new Error(`Places API Error: ${data.status} - ${data.error_message || ''}`); } } catch (error: unknown) { const message = error instanceof Error ? error.message : 'Unknown search error'; console.error('Initial search failed:', error); toast.error((t) => renderClosableToast(`Initial search error: ${message}`, t, 'error'), { id: loadingToastId }); setIsLoading(false); setIsGenerating(false); return; }
@@ -158,17 +164,17 @@ function App() {
     setIsGenerating(true); setIsLoading(true); // Set both loading states
     let loadingToastId: string | undefined = undefined; let aiResponseRelated = false;
     try {
-      // Stricter AI Prompt Instructions - Emphasize EXACT format
+      // Stricter AI Prompt Instructions - Emphasize EXACT format and ONLY JSON
       const structuredPrompt = `Analyze the user request: "${currentPrompt}" for finding coffee shops/cafes.
-      Your response MUST be ONLY a JSON object. Do NOT include any text before or after the JSON object.
-      The JSON object MUST strictly follow one of these two formats:
+      Your response MUST be ONLY a JSON object. Do NOT include any text before or after the JSON object, including markdown formatting like \`\`\`json.
+      The JSON object MUST strictly follow ONE of these two formats EXACTLY:
 
       1. If related to finding coffee shops:
          {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null, "minRating": num|null, "socialVibe": bool|null}|null}
          - "related" MUST be true.
          - "keywords" MUST be a non-empty string containing relevant search terms (e.g., "quiet cafe Paris", "coffee near me Berlin", "latte Rome"). Include location if mentioned.
          - "count" is the number of results requested (e.g., "5 cafes") or null.
-         - "filters" is an object containing boolean/string/number values for extracted criteria, or null if no filters.
+         - "filters" is an object containing boolean/string/number values for extracted criteria, or null if no filters. All filter keys MUST be included, set to null if not applicable.
          - **Filters Details:**
            - "openAfter": Time in HH:MM (24h) format (e.g., "21:00" for "late night") or null.
            - "openNow": true if user asks for places open now/currently, otherwise null.
@@ -198,35 +204,37 @@ function App() {
 
         // Validate the parsed structure
         if (typeof parsedResponse?.related !== 'boolean') {
-          throw new Error("Invalid JSON structure: 'related' field missing or not a boolean.");
+          throw new Error("Invalid JSON: 'related' field missing or not boolean.");
         }
         if (parsedResponse.related === true) {
-          if (typeof parsedResponse.keywords !== 'string' || !parsedResponse.keywords.trim()) throw new Error("Missing or empty 'keywords' for related query.");
+          if (typeof parsedResponse.keywords !== 'string' || !parsedResponse.keywords.trim()) throw new Error("Invalid JSON: Missing or empty 'keywords'.");
           // Add more checks for filters if needed
         } else {
-          if (typeof parsedResponse.message !== 'string' || !parsedResponse.message.trim()) throw new Error("Missing or empty 'message' for unrelated query.");
+          if (typeof parsedResponse.message !== 'string' || !parsedResponse.message.trim()) throw new Error("Invalid JSON: Missing or empty 'message'.");
         }
 
       } catch (parseError: unknown) {
-        const message = parseError instanceof Error ? parseError.message : 'Unknown parsing error';
-        console.error("AI response parsing/validation failed:", message, "Raw:", rawJsonResponse);
-        // Try to extract JSON from potential markdown code blocks as a fallback
-        try {
-            const jsonMatch = rawJsonResponse.match(/```json\s*([\s\S]*?)\s*```/);
-            if (jsonMatch && jsonMatch[1]) {
-                parsedResponse = JSON.parse(jsonMatch[1]);
-                 // Re-validate after extracting from markdown
-                 if (typeof parsedResponse?.related !== 'boolean') throw new Error("Invalid JSON structure (markdown): 'related' field missing or not a boolean.");
-                 // ... add other validation checks as above ...
-            } else {
-                 throw new Error("No valid JSON found, even in markdown."); // Throw if still not found
-            }
-        } catch (fallbackParseError: unknown) {
-             const fallbackMessage = fallbackParseError instanceof Error ? fallbackParseError.message : 'Unknown fallback parsing error';
-             console.error("Fallback JSON extraction failed:", fallbackMessage, "Raw:", rawJsonResponse);
-             toast.error((t) => renderClosableToast(`AI response error: ${fallbackMessage}`, t, 'error'), { id: loadingToastId });
-             setIsGenerating(false); setIsLoading(false); return;
-        }
+         // Fallback: Try to extract JSON from potential markdown code blocks
+         console.warn("Direct JSON parsing failed, trying markdown extraction. Raw:", rawJsonResponse);
+         try {
+             const jsonMatch = rawJsonResponse.match(/```json\s*([\s\S]*?)\s*```/);
+             if (jsonMatch && jsonMatch[1]) {
+                 parsedResponse = JSON.parse(jsonMatch[1]);
+                  // Re-validate after extracting from markdown
+                  if (typeof parsedResponse?.related !== 'boolean') throw new Error("Invalid JSON (markdown): 'related' field missing or not boolean.");
+                  if (parsedResponse.related === true && (typeof parsedResponse.keywords !== 'string' || !parsedResponse.keywords.trim())) throw new Error("Invalid JSON (markdown): Missing or empty 'keywords'.");
+                  if (parsedResponse.related === false && (typeof parsedResponse.message !== 'string' || !parsedResponse.message.trim())) throw new Error("Invalid JSON (markdown): Missing or empty 'message'.");
+             } else {
+                  // If still not valid JSON, show error based on original parse error
+                  const message = parseError instanceof Error ? parseError.message : 'Unknown parsing error';
+                  throw new Error(`No valid JSON found. Parse Error: ${message}`);
+             }
+         } catch (fallbackParseError: unknown) {
+              const fallbackMessage = fallbackParseError instanceof Error ? fallbackParseError.message : 'Unknown fallback parsing error';
+              console.error("Fallback JSON extraction failed:", fallbackMessage, "Raw:", rawJsonResponse);
+              toast.error((t) => renderClosableToast(`AI response error: ${fallbackMessage}`, t, 'error'), { id: loadingToastId });
+              setIsGenerating(false); setIsLoading(false); return;
+         }
       }
 
       // Proceed with validated parsedResponse
@@ -270,14 +278,7 @@ function App() {
   };
   const handleSelectLocation = (location: CoffeeShop) => { setSelectedLocation(location); };
   const handleLogout = async () => { await supabase.auth.signOut(); };
-  // Define handleResetSearch to be passed to Header
-  const handleResetSearch = () => {
-    setPrompt(''); setCoffeeShops([]); setSelectedLocation(null);
-    if (userLocation) { setCurrentMapCenter(userLocation); } else { setCurrentMapCenter({ lat: 24.1477, lng: 120.6736 }); }
-    toast((t) => renderClosableToast('Search reset.', t));
-    // Optionally switch back to landing page on reset from map view?
-    // setViewMode('landing'); // Keep user on map view after reset for now
-  };
+  // Removed unused handleResetSearch function
 
 
   // --- Render Logic ---
@@ -294,19 +295,18 @@ function App() {
           handleLandingSearchSubmit={handleLandingSearchSubmit}
           handleHintClick={handleHintClick}
           isLoading={isLoading || isGenerating} // Pass combined loading state
+          requestLocation={requestLocation} // Pass location handler
         />
       ) : (
         // --- Map View ---
         <div className="flex flex-col h-screen">
           <Header
-            session={session}
-            onLoginClick={() => setShowAuthModal(true)}
-            handleLogout={handleLogout}
+            // Removed session, onLoginClick, handleLogout props
             prompt={prompt} // Use the main prompt state here
             setPrompt={setPrompt}
             isGenerating={isGenerating || isLoading}
             handlePromptSubmit={handleHeaderSearchSubmit} // Use specific handler for header search
-            requestLocation={requestLocation}
+            requestLocation={requestLocation} // Keep location handler for map view header
             hasLocation={!!userLocation}
             onLogoClick={() => { setViewMode('landing'); setPrompt(''); setLandingPrompt(''); setCoffeeShops([]); setSelectedLocation(null); }} // Go back to landing page on logo click & clear state
           />
