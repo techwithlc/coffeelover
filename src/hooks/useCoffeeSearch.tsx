@@ -130,11 +130,11 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
     }
 
     // 3. Amenity Filters (Wifi, Charging, Pets)
-    if (filters.wifi === true && shop.has_wifi !== true) return false;
-    if (filters.charging === true && shop.has_chargers !== true) return false;
-    if (filters.pets === true && shop.pet_friendly !== true) return false;
+    if (filters.wifi_required === true && shop.has_wifi !== true) return false; // Use wifi_required
+    if (filters.power_outlets_required === true && shop.has_chargers !== true) return false; // Use power_outlets_required
+    if (filters.pets === true && shop.pet_friendly !== true) return false; // Keep pets as is
 
-    // TODO: Add filtering for menuItem, quality (might require AI analysis of reviews/description)
+    // TODO: Add filtering for menu_items, quality (might require AI analysis of reviews/description)
 
     return true; // Shop passes all applicable filters
   });
@@ -352,10 +352,11 @@ export function useCoffeeSearch(
 
       let processedShops: CoffeeShop[] = [];
       const detailFieldsToFetch: string[] = [];
-      if (aiFilters?.wifi) { detailFieldsToFetch.push(...WIFI_HINT_FIELDS.split(',')); detailFieldsToFetch.push('wifi'); }
-      if (aiFilters?.charging) { detailFieldsToFetch.push(...CHARGING_HINT_FIELDS.split(',')); detailFieldsToFetch.push('charging'); }
+      // Use updated filter names to decide which hint fields to add
+      if (aiFilters?.wifi_required) { detailFieldsToFetch.push(...WIFI_HINT_FIELDS.split(',')); detailFieldsToFetch.push('wifi'); }
+      if (aiFilters?.power_outlets_required) { detailFieldsToFetch.push(...CHARGING_HINT_FIELDS.split(',')); detailFieldsToFetch.push('charging'); }
       if (aiFilters?.pets) { detailFieldsToFetch.push(...PETS_HINT_FIELDS.split(',')); detailFieldsToFetch.push('pets'); }
-      if (aiFilters?.menuItem) { detailFieldsToFetch.push(...MENU_HINT_FIELDS.split(',')); }
+      if (aiFilters?.menu_items && aiFilters.menu_items.length > 0) { detailFieldsToFetch.push(...MENU_HINT_FIELDS.split(',')); } // Check menu_items
 
       // This try/catch handles the details fetching and filtering part
       try {
@@ -462,58 +463,82 @@ export function useCoffeeSearch(
     // --- End of handleKeywordSearchInternal ---
 
 
-    // --- Main logic of performSearch (formerly handleAiSearch) ---
+    // --- Main logic of performSearch ---
     try {
-      const structuredPrompt = `Analyze the user request: "${prompt}" for finding coffee shops/cafes.
-      Your response MUST be ONLY a JSON object. Do NOT include any text before or after the JSON object, including markdown formatting like \`\`\`json.
-      The JSON object MUST strictly follow ONE of these two formats EXACTLY:
+      // --- New Enhanced Prompt Template ---
+      const structuredPrompt = `Analyze the user's request for finding coffee shops based on the following criteria. Your response MUST be ONLY a JSON object, without any markdown formatting (like \`\`\`json) or surrounding text.
 
-      1. If related to finding coffee shops:
-         {"related": true, "keywords": "...", "count": num|null, "filters": {"openAfter": "HH:MM"|null, "openNow": bool|null, "wifi": bool|null, "charging": bool|null, "pets": bool|null, "menuItem": "string"|null, "quality": "string"|null, "distanceKm": num|null, "minRating": num|null, "socialVibe": bool|null}|null}
-         - "related" MUST be true.
-         - "keywords" MUST be a non-empty string containing relevant search terms (e.g., "quiet cafe Paris", "coffee near me Berlin", "latte Rome"). Include location if mentioned.
-         - "count" is the number of results requested (e.g., "5 cafes") or null.
-         - "filters" is an object containing boolean/string/number values for extracted criteria, or null if no filters. All filter keys MUST be included, set to null if not applicable.
-         - **Filters Details:**
-           - "openAfter": Time in HH:MM (24h) format (e.g., "21:00" for "late night") or null.
-           - "openNow": true if user asks for places open now/currently, otherwise null.
-           - "wifi", "charging", "pets": true if mentioned, otherwise null.
-           - "menuItem": Specific item like "latte", "croissant", or null.
-           - "quality": Terms like "best", "good", "quiet", or null.
-           - "distanceKm": Numeric distance in KM (convert miles if needed, 1 mile = 1.60934 km) or null.
-           - "minRating": Numeric rating (e.g., 4.0, 4.5) or null.
-           - "socialVibe": true if query implies trendy, popular, aesthetic, "pretty girls", etc., otherwise null.
+User Request: "${prompt}"
 
-      2. If unrelated to finding coffee shops:
-         {"related": false, "message": "...", "suggestion": "..."|null}
-         - "related" MUST be false.
-         - "message" MUST be a non-empty string explaining the app's purpose.
-         - "suggestion" can be a relevant query suggestion string or null.
+Current Location Context (Optional, provide if available): ${userLocation ? `{ "latitude": ${userLocation.lat}, "longitude": ${userLocation.lng} }` : null}
 
-      Ensure the output is ONLY the JSON object, starting with { and ending with }.`;
+Available Filter Criteria & Mapping:
+- Location: City, district, or general area (e.g., "信義區", "Taipei", "near me"). Extract as \`location_term\`.
+- Time Limit: "不限時" (no time limit). Map to \`no_time_limit: true\`.
+- Wi-Fi: "WiFi 快", "有 WiFi". Map to \`wifi_required: true\`. If speed mentioned (e.g., "快", "穩定"), map to \`wifi_quality_min: 4\` (assuming a 1-5 scale later).
+- Power Outlets: "有插座", "charging". Map to \`power_outlets_required: true\`.
+- Price: "便宜", "cheap", "budget". Map to \`price_tier: 'cheap'\`. "中價位" -> \`price_tier: 'mid'\`. "高檔" -> \`price_tier: 'high'\`.
+- Vibe/Atmosphere: "安靜", "quiet", "適合工作". Map to \`vibe: 'quiet'\`. "適合聊天", "lively" -> \`vibe: 'social'\`. "一個人" -> \`vibe: 'solo'\`. "有桌燈" -> \`amenities: ['desk_lamp']\` (example of specific amenity tag).
+- Coffee Quality: "咖啡好喝", "good coffee". Map to \`coffee_quality_min: 4\`.
+- Specific Items: "latte", "croissant". Map to \`menu_items: ["latte", "croissant"]\`.
+- Result Count: "5家", "a few". Extract as \`limit: 5\` or a reasonable default like 10.
+
+Output Format (JSON Object ONLY):
+{
+  "query_type": "find_cafe" | "unrelated" | "clarification_needed",
+  "filters": {
+    "location_term": string | null,
+    "no_time_limit": boolean | null,
+    "wifi_required": boolean | null,
+    "wifi_quality_min": number | null,
+    "power_outlets_required": boolean | null,
+    "price_tier": "cheap" | "mid" | "high" | null,
+    "vibe": "quiet" | "social" | "solo" | null,
+    "amenities": string[] | null,
+    "coffee_quality_min": number | null,
+    "menu_items": string[] | null
+  } | null,
+  "limit": number | null,
+  "explanation": string | null // For clarification or unrelated messages
+}
+
+Instructions:
+- If the query is unrelated to finding coffee shops, set \`query_type\` to "unrelated", \`filters\` to null, and provide an explanation.
+- If the query is ambiguous and needs clarification, set \`query_type\` to "clarification_needed", \`filters\` to null, and provide the clarification question in \`explanation\`.
+- If a criterion is not mentioned, set its corresponding filter value to \`null\`.
+- For "near me" location, set \`location_term\` to "near me" and rely on the provided latitude/longitude.
+- Be strict with the JSON format. Only output the JSON object.`;
+      // --- End of Enhanced Prompt Template ---
 
       loadingToastId = toast.loading("Asking AI assistant...");
       const result = await model.generateContent(structuredPrompt);
       const response = await result.response;
       const rawJsonResponse = response.text().trim();
-      let parsedResponse: AiResponse | null = null;
+      // --- New Parsing Logic for Structured Response ---
+      let parsedResponse: { // Define expected structure inline or import from types
+        query_type: "find_cafe" | "unrelated" | "clarification_needed";
+        filters: AiFilters | null;
+        limit: number | null;
+        explanation: string | null;
+      } | null = null;
 
       try {
         parsedResponse = JSON.parse(rawJsonResponse);
-        // Basic validation
-        if (typeof parsedResponse?.related !== 'boolean') throw new Error("Invalid JSON: 'related' field missing or not boolean.");
-        if (parsedResponse.related === true && (typeof parsedResponse.keywords !== 'string' || !parsedResponse.keywords.trim())) throw new Error("Invalid JSON: Missing or empty 'keywords'.");
-        if (parsedResponse.related === false && (typeof parsedResponse.message !== 'string' || !parsedResponse.message.trim())) throw new Error("Invalid JSON: Missing or empty 'message'.");
+        // Add more robust validation based on the new structure if needed
+        if (!parsedResponse || !parsedResponse.query_type) {
+           throw new Error("Invalid JSON structure received from AI.");
+        }
       } catch (parseError: unknown) {
          console.warn("Direct JSON parsing failed, trying markdown extraction. Raw:", rawJsonResponse);
+         // Fallback extraction logic remains similar...
          try {
              const jsonMatch = rawJsonResponse.match(/```json\s*([\s\S]*?)\s*```/);
              if (jsonMatch && jsonMatch[1]) {
                  parsedResponse = JSON.parse(jsonMatch[1]);
                  // Re-validate
-                 if (typeof parsedResponse?.related !== 'boolean') throw new Error("Invalid JSON (markdown): 'related' field missing or not boolean.");
-                 if (parsedResponse.related === true && (typeof parsedResponse.keywords !== 'string' || !parsedResponse.keywords.trim())) throw new Error("Invalid JSON (markdown): Missing or empty 'keywords'.");
-                 if (parsedResponse.related === false && (typeof parsedResponse.message !== 'string' || !parsedResponse.message.trim())) throw new Error("Invalid JSON (markdown): Missing or empty 'message'.");
+                 if (!parsedResponse || !parsedResponse.query_type) {
+                    throw new Error("Invalid JSON structure (markdown) received from AI.");
+                 }
              } else {
                   const message = parseError instanceof Error ? parseError.message : 'Unknown parsing error';
                   throw new Error(`No valid JSON found. Parse Error: ${message}`);
@@ -521,40 +546,51 @@ export function useCoffeeSearch(
          } catch (fallbackParseError: unknown) {
               const fallbackMessage = fallbackParseError instanceof Error ? fallbackParseError.message : 'Unknown fallback parsing error';
               console.error("Fallback JSON extraction failed:", fallbackMessage, "Raw:", rawJsonResponse);
-              throw new Error(`AI response error: ${fallbackMessage}`); // Throw to be caught by outer try/catch
+              throw new Error(`AI response error: ${fallbackMessage}`);
          }
       }
+      // --- End New Parsing Logic ---
 
-      // Proceed with validated parsedResponse
-      if (parsedResponse.related === true) {
-        // aiResponseRelated = true; // Removed unused assignment
-        const { keywords, count, filters } = parsedResponse;
-        if (keywords.trim()) {
-          let searchMessage = `Searching for ${keywords.trim()}`;
-          if (filters?.openNow) searchMessage += " (open now)";
-          // Update toast message
-          toast.loading(searchMessage, { id: loadingToastId });
-          // Call the internal keyword search logic
-          await handleKeywordSearchInternal(keywords.trim(), count, filters, loadingToastId);
-          triggerViewSwitch(); // Call the callback to switch view in App.tsx
-
-          // Show social vibe toast if applicable *after* results are set
-          if (filters?.socialVibe === true && searchResults.length > 0) { // Check searchResults state
-             toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t));
-          }
-
-        } else {
-          // AI related but no keywords? Treat as error.
-          throw new Error("AI didn't provide keywords.");
+      // --- Handle different query types ---
+      if (parsedResponse.query_type === "find_cafe" && parsedResponse.filters) {
+        const { filters, limit } = parsedResponse;
+        // Construct a descriptive search message based on filters
+        let searchMessage = "Searching for coffee shops";
+        if (filters.location_term && filters.location_term !== "near me") {
+           searchMessage += ` in ${filters.location_term}`;
+        } else if (filters.location_term === "near me") {
+           searchMessage += " near you";
         }
-      } else {
-        // AI response is not related to coffee shop search
-        const { message } = parsedResponse;
-        toast.error((t) => renderClosableToast(message, t, 'error'), { id: loadingToastId, duration: 5000 });
-        // No search results to set, error state is null, loading will be reset in finally
+        // Add more filter descriptions to the message if desired...
+        toast.loading(searchMessage, { id: loadingToastId });
+
+        // Call the internal keyword search logic, passing the structured filters
+        // Pass the structured filters object to handleKeywordSearchInternal
+        await handleKeywordSearchInternal(
+            filters.location_term || "coffee shop", // Use location term or default keyword for text search query
+            limit, // Pass the limit extracted by AI
+            filters, // Pass the full filters object for detailed filtering
+            loadingToastId
+        );
+        triggerViewSwitch(); // Call the callback to switch view in App.tsx
+
+        // Show social vibe toast if applicable *after* results are set
+        if (filters?.socialVibe === true && searchResults.length > 0) {
+           toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t));
+        }
+
+      } else if (parsedResponse.query_type === "clarification_needed") {
+         toast.error((t) => renderClosableToast(`AI needs clarification: ${parsedResponse.explanation || 'Please refine your search.'}`, t, 'error'), { id: loadingToastId, duration: 6000 });
+         setSearchError(parsedResponse.explanation || 'Ambiguous query.'); // Set error state
+      } else { // Includes "unrelated" or potential errors
+         const message = parsedResponse.explanation || "Sorry, I can only help with finding coffee shops.";
+         toast.error((t) => renderClosableToast(message, t, 'error'), { id: loadingToastId, duration: 5000 });
+         setSearchError(message); // Set error state
       }
+      // --- End Handling Query Types ---
+
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown AI/Search error';
+      const message = error instanceof Error ? error.message : 'Unknown AI processing error';
       console.error("Error during AI processing or keyword search:", error);
       toast.error((t) => renderClosableToast(`Error: ${message}`, t, 'error'), { id: loadingToastId });
       setSearchError(message); // Set error state in the hook

@@ -112,20 +112,37 @@ export interface PlaceDetailsResponse {
 
 // --- AI Response Types ---
 export interface AiFilters {
+  location_term?: string | null; // Added
   openAfter?: string | null; // HH:MM format
   openNow?: boolean | null;
-  wifi?: boolean | null;
-  charging?: boolean | null;
-  pets?: boolean | null;
-  menuItem?: string | null;
-  quality?: string | null; // e.g., "best", "good", "quiet"
+  wifi_required?: boolean | null; // Renamed from wifi
+  wifi_quality_min?: number | null; // Added
+  power_outlets_required?: boolean | null; // Renamed from charging
+  pets?: boolean | null; // Kept as 'pets' for simplicity, maps to pet_friendly
+  menu_items?: string[] | null; // Added (for specific item search)
+  quality?: string | null; // General quality term, maybe map to vibe or rating?
+  vibe?: "quiet" | "social" | "solo" | null; // Added
+  amenities?: string[] | null; // Added for specific tags like 'desk_lamp'
   distanceKm?: number | null;
-  minRating?: number | null;
-  socialVibe?: boolean | null; // For trendy/popular/aesthetic queries
+  minRating?: number | null; // Maps to overall rating
+  coffee_quality_min?: number | null; // Added
+  price_tier?: "cheap" | "mid" | "high" | null; // Added
+  socialVibe?: boolean | null; // Keep for now, might overlap with vibe:'social'
+  no_time_limit?: boolean | null; // Added
 }
+
+// This specific AiResponse type might become less useful if parsing directly into the structured object below
 export type AiResponse =
-  | { related: true; keywords: string; count: number | null; filters: AiFilters | null }
-  | { related: false; message: string; suggestion?: string | null };
+  | { related: true; keywords: string; count: number | null; filters: AiFilters | null } // Old structure, might deprecate
+  | { related: false; message: string; suggestion?: string | null }; // Old structure
+
+// Define the expected structured response from Gemini based on the new prompt
+export interface GeminiStructuredResponse {
+  query_type: "find_cafe" | "unrelated" | "clarification_needed";
+  filters: AiFilters | null;
+  limit: number | null;
+  explanation: string | null;
+}
 
 
 // Database interface reflecting actual Supabase structure
