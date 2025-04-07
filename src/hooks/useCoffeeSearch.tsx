@@ -142,7 +142,7 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
 
 
 // --- Constants for Place Details Fetching ---
-const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours,utc_offset_minutes,price_level'; // Added utc_offset_minutes, price_level
+const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours,price_level'; // Removed unsupported utc_offset_minutes
 const WIFI_HINT_FIELDS = 'website,editorial_summary'; // Fields that *might* contain wifi info
 const PETS_HINT_FIELDS = 'website,editorial_summary'; // Fields that *might* contain pet info
 const CHARGING_HINT_FIELDS = 'website,editorial_summary'; // Fields that *might* contain charging info
@@ -361,8 +361,10 @@ export function useCoffeeSearch(
 
       // This try/catch handles the details fetching and filtering part
       try {
-        toast.loading('Fetching details for filtering...', { id: internalLoadingToastId });
-        const detailPromises = candidateShops.map(candidate => fetchPlaceDetails(candidate.place_id, detailFieldsToFetch));
+        toast.loading(`Fetching details for top ${Math.min(candidateShops.length, 10)} results...`, { id: internalLoadingToastId });
+        // --- Limit detail fetches to the first 10 candidates ---
+        const candidatesToFetchDetails = candidateShops.slice(0, 10);
+        const detailPromises = candidatesToFetchDetails.map(candidate => fetchPlaceDetails(candidate.place_id, detailFieldsToFetch));
         const detailedResults = await Promise.all(detailPromises);
         processedShops = detailedResults.filter((shop): shop is CoffeeShop => shop !== null);
 
@@ -442,12 +444,13 @@ export function useCoffeeSearch(
 
         setSearchResults(countFilteredShops); // Update hook state
 
-        // Signal App to update map center if results were found
+        // Signal App to update map center based on the *filtered* results from the fetched details
         if (countFilteredShops.length > 0 && countFilteredShops[0].lat && countFilteredShops[0].lng) {
           setMapCenterToUpdate({ lat: countFilteredShops[0].lat, lng: countFilteredShops[0].lng });
+        } else if (processedShops.length > 0 && processedShops[0].lat && processedShops[0].lng) {
+           // Fallback: Center on the first processed shop if filtering removed all results but details were fetched
+           setMapCenterToUpdate({ lat: processedShops[0].lat, lng: processedShops[0].lng });
         }
-
-        // Social vibe toast (moved to finally block of outer function)
 
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Unknown processing error';
