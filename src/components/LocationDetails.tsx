@@ -66,7 +66,7 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   const [wifiSubmitError, setWifiSubmitError] = useState<string | null>(null);
   const [wifiSubmitSuccess, setWifiSubmitSuccess] = useState<string | null>(null);
   const [showQrCode, setShowQrCode] = useState<Record<string, boolean>>({}); // State for QR code visibility
-  const [currentUserHasSubmittedWifi, setCurrentUserHasSubmittedWifi] = useState(false);
+  // const [currentUserHasSubmittedWifi, setCurrentUserHasSubmittedWifi] = useState(false); // Removed unused state
 
   // Helper to construct the PROXY URL for fetching the actual photo URL
   const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
@@ -160,15 +160,7 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
     fetchWifiDetails();
   }, [location.id]);
 
-  // Separate effect to check if user has submitted, runs when wifiDetails or userId changes
-  useEffect(() => {
-    if (userId && wifiDetails.length > 0) {
-      const userSubmitted = wifiDetails.some(detail => detail.user_id === userId);
-      setCurrentUserHasSubmittedWifi(userSubmitted);
-    } else {
-      setCurrentUserHasSubmittedWifi(false); // Reset if user logs out or details are cleared
-    }
-  }, [wifiDetails, userId]);
+  // Removed useEffect that set currentUserHasSubmittedWifi
 
 
   // Function to handle rating submission
@@ -256,10 +248,10 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
         throw error;
       }
 
-      // Add the new details to the top of the displayed list and mark as submitted
+      // Add the new details to the top of the displayed list
       if (data) {
          setWifiDetails(prev => [data as WifiDetail, ...prev]);
-         setCurrentUserHasSubmittedWifi(true); // User has now submitted
+         // setCurrentUserHasSubmittedWifi(true); // Removed setting unused state
       }
 
       setWifiSubmitSuccess("Wi-Fi details submitted successfully!");
@@ -447,14 +439,11 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
             ) : isLoadingWifi ? (
               // Case 2: Logged in, but data is loading
               <p className="text-sm text-gray-500">Loading Wi-Fi info...</p>
-            ) : currentUserHasSubmittedWifi ? (
-              // Case 3: Logged in AND has submitted for this location
-              <>
-                {wifiDetails.length > 0 ? (
-                  // Sub-case 3a: Details exist, show the list
-                  <div className="space-y-3">
-                    {wifiDetails.map((wifi) => {
-                      // Generate QR code string only for private networks with credentials
+            ) : wifiDetails.length > 0 ? ( // Check if details exist
+              // Case 3: Logged in AND Wi-Fi details EXIST for this location (show them)
+              <div className="space-y-3">
+                {wifiDetails.map((wifi) => {
+                  // Generate QR code string only for private networks with credentials
                       const canGenerateQr = wifi.wifi_type === 'private' && wifi.ssid && wifi.password;
                       const qrCodeValue = canGenerateQr
                         ? `WIFI:T:WPA;S:${wifi.ssid};P:${wifi.password};;`
@@ -507,20 +496,15 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
                         </div>
                       ); // Closing parenthesis for return statement inside map
                     })}
-                    {/* Disclaimer shown only when list is displayed */}
-                    <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                      <AlertTriangle size={14} className="text-orange-500" />
-                      Wi-Fi details are user-submitted. Use with caution.
-                    </p>
-                  </div> // Closing div for space-y-3
-                ) : (
-                  // Sub-case 3b: User submitted, but somehow no details exist (edge case)
-                  <p className="text-sm text-gray-500">No Wi-Fi details found (including yours).</p>
-                )}
-              </> // Closing fragment for Case 3
+                {/* Disclaimer shown only when list is displayed */}
+                <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                  <AlertTriangle size={14} className="text-orange-500" />
+                  Wi-Fi details are user-submitted. Use with caution.
+                </p>
+              </div> // Closing div for space-y-3
             ) : (
-              // Case 4: Logged in BUT has NOT submitted for this location
-              <p className="text-sm text-gray-500">Submit the Wi-Fi details for this location to view information shared by others.</p>
+              // Case 4: Logged in BUT NO Wi-Fi details exist for this location yet
+              <p className="text-sm text-gray-500">No Wi-Fi details submitted for this location yet. Be the first!</p>
             )}
             {/* --- End Conditional Rendering --- */}
 
