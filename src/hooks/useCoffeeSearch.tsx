@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react'; // Import React for JSX
 // Import necessary types, including PlaceDetailsResult
-import { CoffeeShop, OpeningHoursPeriod, AiFilters, AiResponse, PlaceResult, PlaceDetailsResponse, PlacesNearbyResponse, PlaceDetailsResult } from '../lib/types';
+import { CoffeeShop, OpeningHoursPeriod, AiFilters, PlaceResult, PlaceDetailsResponse, PlacesNearbyResponse, PlaceDetailsResult } from '../lib/types'; // Removed unused AiResponse
 import { supabase } from '../lib/supabaseClient';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { toast, Toast } from 'react-hot-toast'; // Import Toast type
@@ -683,17 +683,13 @@ Instructions:
     setMapCenterToUpdate // Allow App to reset the update signal
   };
 }
-
 </final_file_content>
 
 IMPORTANT: For any future changes to this file, use the final_file_content shown above as your reference. This content reflects the current state of the file, including any auto-formatting (e.g., if you used single quotes but the formatter converted them to double quotes). Always base your SEARCH/REPLACE operations on this final version to ensure accuracy.
 
-
-
-New problems detected after saving the file:
-src/hooks/useCoffeeSearch.tsx
-- [eslint Error] Line 2: 'AiResponse' is defined but never used.<environment_details>
+<environment_details>
 # VSCode Visible Files
+src/lib/mockData.ts
 src/hooks/useCoffeeSearch.tsx
 
 # VSCode Open Tabs
@@ -702,7 +698,6 @@ netlify/functions/places-proxy.ts
 src/components/Map.tsx
 supabase/migrations/20250406153826_add_wifi_details_and_ratings.sql
 .gitignore
-README.md
 supabase/config.toml
 .env
 src/components/LandingPage.tsx
@@ -713,16 +708,16 @@ package.json
 src/App.tsx
 src/components/LocationDetails.tsx
 src/lib/mockData.ts
-src/hooks/useCoffeeSearch.tsx
 src/lib/types.ts
 src/components/Sidebar.tsx
 public/favicon.png
 index.html
 src/lib/supabaseClient.ts
 vite.config.ts
+src/hooks/useCoffeeSearch.tsx
 
 # Current Time
-4/8/2025, 2:12:51 AM (Asia/Taipei, UTC+8:00)
+4/8/2025, 2:35:08 AM (Asia/Taipei, UTC+8:00)
 
 # Current Mode
 ACT MODE

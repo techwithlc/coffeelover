@@ -27,9 +27,10 @@ flowchart TD
     H --> I[Check Supabase locations table by google_place_id]
     I -->|Exists| J[Return Supabase UUID + details]
     I -->|Doesn't exist| K[Insert new location, return UUID + details]
-    J & K --> L[Build CoffeeShop objects with Supabase UUIDs]
+    J --> L[Build CoffeeShop objects with Supabase UUIDs]
+    K --> L
 
-    L --> M[Apply filters (distance, open now, rating, etc.)]
+    L --> M["Apply filters<br>(distance, open now,<br>rating, etc.)"]
     M --> N[Display filtered coffee shops on map/list]
 
     N --> O[User selects a coffee shop]
