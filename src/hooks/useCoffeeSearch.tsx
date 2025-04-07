@@ -288,7 +288,7 @@ export function useCoffeeSearch(
   const [searchError, setSearchError] = useState<string | null>(null);
   const [mapCenterToUpdate, setMapCenterToUpdate] = useState<{ lat: number; lng: number } | null>(null); // To signal App to update map center
 
-  const performSearch = useCallback(async (prompt: string, triggerViewSwitch: () => void) => {
+  const performSearch = useCallback(async (prompt: string, triggerViewSwitch: () => void = () => {}) => {
     if (!prompt.trim()) {
       toast.error((t) => renderClosableToast("Please enter what you're looking for.", t, 'error'));
       return;
@@ -569,8 +569,8 @@ export function useCoffeeSearch(
 
   }, [userLocation, currentMapCenter, setSearchResults, setIsLoading, setIsGenerating, setSearchError, setMapCenterToUpdate]); // Add state setters to dependencies
 
-  // Explicitly type the returned performSearch function
-  const typedPerformSearch: (prompt: string, triggerViewSwitch: () => void) => Promise<void> = performSearch;
+  // Explicitly type the returned performSearch function with optional second argument
+  const typedPerformSearch: (prompt: string, triggerViewSwitch?: () => void) => Promise<void> = performSearch;
 
   return {
     isLoading,

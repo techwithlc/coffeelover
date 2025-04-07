@@ -59,6 +59,11 @@ function App() {
     setMapCenterToUpdate // Function to reset the signal
   } = useCoffeeSearch(userLocation, currentMapCenter);
 
+  // --- Effect to perform an initial default search on first load ---
+  useEffect(() => {
+    performSearch("coffee shop", () => {}); // Default prompt, no view switch needed
+  }, []);
+
   // --- Effect to update map center based on hook signal ---
   useEffect(() => {
     if (mapCenterToUpdate) {
