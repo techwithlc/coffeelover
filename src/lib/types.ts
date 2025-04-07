@@ -70,6 +70,64 @@ export interface Favorite {
   coffee_shop?: CoffeeShop;
 }
 
+
+// --- Google Places API Types ---
+export interface PlaceResult {
+  place_id: string;
+  name: string;
+  geometry: { location: { lat: number; lng: number; }; };
+  vicinity?: string;
+  rating?: number;
+}
+export interface PlaceReview {
+  author_name?: string;
+  rating?: number;
+  text?: string;
+  time?: number; // Unix timestamp
+}
+export interface PlaceDetailsResult {
+  place_id: string;
+  name?: string;
+  formatted_address?: string;
+  geometry?: { location: { lat: number; lng: number; }; };
+  rating?: number;
+  opening_hours?: OpeningHours; // Re-use existing OpeningHours type
+  reviews?: PlaceReview[];
+  website?: string;
+  editorial_summary?: { overview?: string };
+  price_level?: number;
+  utc_offset_minutes?: number;
+}
+export interface PlacesNearbyResponse {
+  results: PlaceResult[];
+  status: string; // e.g., "OK", "ZERO_RESULTS", "INVALID_REQUEST"
+  error_message?: string;
+  next_page_token?: string;
+}
+export interface PlaceDetailsResponse {
+  result?: PlaceDetailsResult;
+  status: string;
+  error_message?: string;
+}
+
+// --- AI Response Types ---
+export interface AiFilters {
+  openAfter?: string | null; // HH:MM format
+  openNow?: boolean | null;
+  wifi?: boolean | null;
+  charging?: boolean | null;
+  pets?: boolean | null;
+  menuItem?: string | null;
+  quality?: string | null; // e.g., "best", "good", "quiet"
+  distanceKm?: number | null;
+  minRating?: number | null;
+  socialVibe?: boolean | null; // For trendy/popular/aesthetic queries
+}
+export type AiResponse =
+  | { related: true; keywords: string; count: number | null; filters: AiFilters | null }
+  | { related: false; message: string; suggestion?: string | null };
+
+
 // Database interface reflecting actual Supabase structure
 export interface DatabaseSchema {
   Tables: {
