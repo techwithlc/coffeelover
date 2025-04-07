@@ -36,6 +36,16 @@ interface PhotoProxyResponse {
 
 // Define type for Wi-Fi details fetched from Supabase
 type WifiDetail = Database['public']['Tables']['location_wifi_details']['Row'];
+// Define type for Charger details (assuming table structure)
+interface ChargerDetail {
+  id: string; // Assuming UUID primary key
+  location_id: string;
+  user_id: string;
+  has_chargers: boolean;
+  charger_count: number | null; // Allow null if user only confirms availability
+  created_at: string;
+}
+
 
 interface Props {
   location: CoffeeShop;
@@ -67,6 +77,17 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   const [wifiSubmitSuccess, setWifiSubmitSuccess] = useState<string | null>(null);
   const [showQrCode, setShowQrCode] = useState<Record<string, boolean>>({}); // State for QR code visibility
   // const [currentUserHasSubmittedWifi, setCurrentUserHasSubmittedWifi] = useState(false); // Removed unused state
+
+  // State for Charger Details
+  const [chargerDetails, setChargerDetails] = useState<ChargerDetail[]>([]);
+  const [isLoadingChargers, setIsLoadingChargers] = useState(true);
+  const [showChargerForm, setShowChargerForm] = useState(false);
+  const [newHasChargers, setNewHasChargers] = useState<boolean | null>(null); // Use null for unselected
+  const [newChargerCount, setNewChargerCount] = useState<string>(''); // Use string for input
+  const [isSubmittingCharger, setIsSubmittingCharger] = useState(false);
+  const [chargerSubmitError, setChargerSubmitError] = useState<string | null>(null);
+  const [chargerSubmitSuccess, setChargerSubmitSuccess] = useState<string | null>(null);
+
 
   // Helper to construct the PROXY URL for fetching the actual photo URL
   const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
@@ -159,6 +180,42 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
 
     fetchWifiDetails();
   }, [location.id]);
+
+  // Effect to fetch Charger Details from Supabase
+  useEffect(() => {
+    const fetchChargerDetails = async () => {
+      if (!location.id) return;
+      setIsLoadingChargers(true);
+      try {
+        // Assuming table name is 'location_charger_details'
+        const { data, error } = await supabase
+          .from('location_charger_details')
+          .select('*')
+          .eq('location_id', location.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          // If table doesn't exist yet (42P01), treat as empty, otherwise throw
+          if (error.code === '42P01') {
+             console.warn("location_charger_details table not found, assuming no charger data.");
+             setChargerDetails([]);
+          } else {
+            throw error;
+          }
+        } else {
+          setChargerDetails(data || []);
+        }
+      } catch (error) {
+        console.error('Error fetching Charger details:', error);
+        setChargerDetails([]); // Set empty on error
+      } finally {
+        setIsLoadingChargers(false);
+      }
+    };
+
+    fetchChargerDetails();
+  }, [location.id]);
+
 
   // Removed useEffect that set currentUserHasSubmittedWifi
 
@@ -266,6 +323,71 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
       setWifiSubmitError("Failed to submit Wi-Fi details. Please try again.");
     } finally {
       setIsSubmittingWifi(false);
+    }
+  };
+
+  // Function to handle Charger detail submission
+  const handleChargerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userId) {
+      setChargerSubmitError("You must be logged in to submit charger details.");
+      return;
+    }
+    if (newHasChargers === null) {
+      setChargerSubmitError("Please indicate if chargers are available (Yes/No).");
+      return;
+    }
+    const count = newHasChargers ? parseInt(newChargerCount, 10) : null;
+    if (newHasChargers && (isNaN(count!) || count! < 0)) {
+       setChargerSubmitError("Please enter a valid number for charger count (0 or more).");
+       return;
+    }
+
+
+    setIsSubmittingCharger(true);
+    setChargerSubmitError(null);
+    setChargerSubmitSuccess(null);
+
+    try {
+      const { data, error } = await supabase
+        .from('location_charger_details')
+        .insert({
+          location_id: location.id,
+          user_id: userId,
+          has_chargers: newHasChargers,
+          charger_count: newHasChargers ? count : null, // Store count only if available
+        })
+        .select()
+        .single();
+
+      if (error) {
+         // Handle potential unique constraint violation if user already submitted for this location?
+         // Or allow multiple submissions? For now, assume multiple allowed or handle via RLS/triggers later.
+        throw error;
+      }
+
+      // Add the new details to the state (optional, could just refetch)
+      if (data) {
+         setChargerDetails(prev => [data as ChargerDetail, ...prev]);
+      }
+
+      setChargerSubmitSuccess("Charger details submitted successfully!");
+      // Reset form and hide it
+      setNewHasChargers(null);
+      setNewChargerCount('');
+      setShowChargerForm(false);
+
+    } catch (err: unknown) { // Use unknown for better type safety
+      console.error('Error submitting Charger details:', err);
+       // Check if it's a Supabase error with a code property
+       if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === '42P01') {
+           setChargerSubmitError("Feature under development: Charger details table not found.");
+       } else {
+           const message = err instanceof Error ? err.message : "Failed to submit charger details. Please try again.";
+           setChargerSubmitError(message);
+       }
+    } finally {
+      setIsSubmittingCharger(false);
     }
   };
 
@@ -409,16 +531,9 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
                 <span className="text-sm">{location.price_range}</span>
               </div>
             )}
-            {/* Wi-Fi section removed from here, will be added below */}
-            {location.has_chargers && ( // Added charger info display
-              <div className="flex items-center gap-2">
-                <BatteryCharging size={18} className="text-green-500" />
-                <span className="text-sm">
-                  Charging Available {location.charger_count !== undefined && location.charger_count > 0 ? `(${location.charger_count})` : ''}
-                </span>
-              </div>
-            )}
-            {location.pet_friendly && (
+            {/* Charger info display removed from here, handled in dedicated section */}
+            {/* Pet friendly display remains */}
+             {location.pet_friendly && (
               <div className="flex items-center gap-2">
                 <PawPrint size={18} className="text-green-500" />
                 <span className="text-sm">Pet Friendly</span>
@@ -603,6 +718,112 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
              </div>
            )}
           </div>
+
+          {/* Detailed Charger Information Section */}
+          <div className="mt-6 border-t pt-4">
+            <h4 className="text-md font-semibold mb-3 flex items-center gap-2">
+              <BatteryCharging size={18} /> Power Outlets / Chargers
+            </h4>
+             {!userId ? (
+              // Case 1: User not logged in
+              <p className="text-sm text-gray-500">Please log in to view or add charger details.</p>
+            ) : isLoadingChargers ? (
+              // Case 2: Logged in, but data is loading
+              <p className="text-sm text-gray-500">Loading charger info...</p>
+            ) : chargerDetails.length > 0 ? (
+              // Case 3: Logged in AND Charger details EXIST for this location (show summary)
+              <div className="text-sm">
+                 {/* Simple display: Check if *any* report says chargers are available */}
+                 {chargerDetails.some(d => d.has_chargers) ? (
+                    <p className="text-green-700 flex items-center gap-1">
+                       <BatteryCharging size={16} /> Charging likely available (based on user reports).
+                       {/* Optionally calculate average count */}
+                       {(() => {
+                           const counts = chargerDetails.filter(d => d.has_chargers && d.charger_count !== null).map(d => d.charger_count!);
+                           if (counts.length > 0) {
+                               const avg = Math.round(counts.reduce((a, b) => a + b, 0) / counts.length);
+                               return <span className="text-xs text-gray-500 ml-1">(Avg. count: ~{avg})</span>;
+                           }
+                           return null;
+                       })()}
+                    </p>
+                 ) : (
+                    <p className="text-red-700 flex items-center gap-1">
+                       <AlertTriangle size={16} /> Charging likely unavailable (based on user reports).
+                    </p>
+                 )}
+                 <p className="text-xs text-gray-500 mt-1">Based on {chargerDetails.length} user report(s).</p>
+              </div>
+            ) : (
+              // Case 4: Logged in BUT NO Charger details exist for this location yet
+              <p className="text-sm text-gray-500">No charger details submitted for this location yet. Be the first!</p>
+            )}
+
+             {/* Add/Show Charger Form Button & Form Container - Always show if logged in */}
+             {userId && (
+              <div className="mt-4">
+                {!showChargerForm && (
+                  <button
+                    onClick={() => setShowChargerForm(true)}
+                    className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                  >
+                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Add Charger Info
+                  </button>
+                )}
+
+                {/* Charger Submission Form */}
+                {showChargerForm && (
+                  <form onSubmit={handleChargerSubmit} className="mt-4 p-4 border rounded bg-indigo-50 space-y-3">
+                     <div className="flex justify-between items-center mb-2">
+                      <h5 className="font-medium text-sm">Add Charger Details</h5>
+                      <button type="button" onClick={() => setShowChargerForm(false)} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                    </div>
+                    {/* Has Chargers Radio */}
+                    <div className="space-y-1">
+                       <label className="block text-xs font-medium text-gray-700">Are chargers/outlets available?</label>
+                       <div className="flex gap-4">
+                           <label className="flex items-center gap-1 text-sm">
+                               <input type="radio" name="has_chargers" value="yes" checked={newHasChargers === true} onChange={() => setNewHasChargers(true)} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300"/> Yes
+                           </label>
+                            <label className="flex items-center gap-1 text-sm">
+                               <input type="radio" name="has_chargers" value="no" checked={newHasChargers === false} onChange={() => setNewHasChargers(false)} className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300"/> No
+                           </label>
+                       </div>
+                    </div>
+                    {/* Charger Count Input (conditional) */}
+                    {newHasChargers === true && (
+                       <div>
+                          <label htmlFor="charger_count" className="block text-xs font-medium text-gray-700 mb-1">Approximate number of outlets/ports? <span className="text-gray-500">(Optional)</span></label>
+                          <input
+                            type="number"
+                            id="charger_count"
+                            min="0"
+                            step="1"
+                            value={newChargerCount}
+                            onChange={(e) => setNewChargerCount(e.target.value)}
+                            className="w-full p-1.5 border border-gray-300 rounded text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="e.g., 5"
+                          />
+                        </div>
+                    )}
+                     <button
+                      type="submit"
+                      disabled={isSubmittingCharger || newHasChargers === null}
+                      className="w-full px-3 py-1.5 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {isSubmittingCharger ? 'Submitting...' : 'Submit Charger Info'}
+                    </button>
+                    {chargerSubmitError && <p className="text-red-600 text-xs mt-1">{chargerSubmitError}</p>}
+                    {chargerSubmitSuccess && <p className="text-green-600 text-xs mt-1">{chargerSubmitSuccess}</p>}
+                  </form>
+                )}
+              </div>
+             )}
+          </div>
+
 
           {/* Experience Rating Section */}
           {userId && ( // Only show rating form if user is logged in
