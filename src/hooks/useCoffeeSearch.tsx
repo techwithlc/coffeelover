@@ -193,36 +193,34 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
 
     if (data.status === 'OK' && data.result) {
       const details = data.result;
+      // --- Remove Supabase query for columns not in 'locations' table ---
+      // The following query was causing errors because has_wifi, etc. are not in the locations table.
+      // We will handle fetching related data (like wifi details) separately later.
+      /*
       let dbData: Partial<CoffeeShop> | null = null;
-      let dbError: unknown = null; // Use unknown type
-
-      // Fetch supplementary data from Supabase if client is valid
+      let dbError: unknown = null;
       if (supabase && supabase.from) {
         try {
             const { data: fetchedDbData, error: fetchDbError } = await supabase
             .from('locations')
-            .select('has_wifi, has_chargers, charger_count, pet_friendly') // Select specific boolean/count fields
+            .select('has_wifi, has_chargers, charger_count, pet_friendly')
             .eq('id', details.place_id)
-            .maybeSingle(); // Use maybeSingle to handle 0 or 1 result gracefully
-
+            .maybeSingle();
             dbData = fetchedDbData;
             dbError = fetchDbError;
-
-            // Log Supabase errors more informatively, ignoring "No rows found" which is expected
-            // Use a type guard instead of 'as any'
             if (dbError && typeof dbError === 'object' && dbError !== null && 'code' in dbError && (dbError as { code: string }).code !== 'PGRST116') {
-               console.error(`Supabase query error for ${details.place_id}:`, dbError); // Log the full error
+               console.error(`Supabase query error for ${details.place_id}:`, dbError);
             }
         } catch (supabaseQueryError) {
              console.error(`Supabase query exception for ${details.place_id}:`, supabaseQueryError);
-             dbError = supabaseQueryError; // Store the exception as the error
+             dbError = supabaseQueryError;
         }
       } else {
           console.warn(`Supabase client not available, skipping DB query for ${details.place_id}`);
       }
+      */
 
-
-      // Construct the CoffeeShop object, merging Google Places data and Supabase data
+      // Construct the CoffeeShop object using only Google Places data for now
       const coffeeShopData: CoffeeShop = {
         id: details.place_id,
         name: details.name || 'N/A', // Provide default if name is missing
@@ -230,15 +228,15 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
         lng: details.geometry?.location.lng,
         address: details.formatted_address || 'Address not available',
         rating: details.rating,
-        opening_hours: details.opening_hours, // Directly use the opening_hours object
-        utc_offset_minutes: details.utc_offset_minutes, // Get UTC offset if available
-        // --- Merge DB data with defaults ---
-        has_wifi: dbData?.has_wifi ?? false, // Default to false if not in DB or DB fetch failed
-        pet_friendly: dbData?.pet_friendly ?? false, // Default to false
-        has_chargers: dbData?.has_chargers ?? false, // Default to false
-        charger_count: dbData?.charger_count ?? 0, // Default to 0
+        opening_hours: details.opening_hours,
+        utc_offset_minutes: details.utc_offset_minutes,
+        // --- Set related fields to undefined/default for now ---
+        has_wifi: undefined, // Set to undefined as we are not fetching it here
+        pet_friendly: undefined, // Set to undefined
+        has_chargers: undefined, // Set to undefined
+        charger_count: undefined, // Set to undefined
         // --- Other details from Google ---
-        price_range: details.price_level?.toString(), // Convert price level number to string if needed
+        price_range: details.price_level?.toString(),
         description: details.editorial_summary?.overview,
         // TODO: Potentially parse menu_highlights from reviews or website if needed by filters
         menu_highlights: [], // Placeholder
