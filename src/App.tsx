@@ -60,9 +60,7 @@ function App() {
   } = useCoffeeSearch(userLocation, currentMapCenter);
 
   // --- Effect to perform an initial default search on first load ---
-  useEffect(() => {
-    performSearch("coffee shop", () => {}); // Default prompt, no view switch needed
-  }, []);
+  // (Removed to prevent unwanted fetch on refresh or navigation)
 
   // --- Effect to update map center based on hook signal ---
   useEffect(() => {
@@ -107,20 +105,19 @@ function App() {
     e.preventDefault();
     setPrompt(landingPrompt); // Keep updating main prompt for consistency if needed
     setSelectedLocation(null); // Clear selected location on new search
-    performSearch(landingPrompt, () => setViewMode('map')); // Pass callback to switch view
+    performSearch(landingPrompt).then(() => setViewMode('map'));
   };
 
   const handleHeaderSearchSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
-    setSelectedLocation(null); // Clear selected location on new search
-    // No view switch needed here as we are already in map view
-    await performSearch(prompt, () => {}); // Pass empty callback
+    setSelectedLocation(null);
+    await performSearch(prompt);
   };
 
    const handleHintClick = (hint: string) => {
      setLandingPrompt(hint);
-     setSelectedLocation(null); // Clear selected location on new search
-     performSearch(hint, () => setViewMode('map')); // Pass callback to switch view
+     setSelectedLocation(null);
+     performSearch(hint).then(() => setViewMode('map'));
    };
 
   // Other Handlers (Keep)
