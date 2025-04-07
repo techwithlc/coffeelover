@@ -129,12 +129,14 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
       if (!isOpenLateEnough) return false;
     }
 
-    // 3. Amenity Filters (Wifi, Charging, Pets)
-    if (filters.wifi_required === true && shop.has_wifi !== true) return false; // Use wifi_required
-    if (filters.power_outlets_required === true && shop.has_chargers !== true) return false; // Use power_outlets_required
-    if (filters.pets === true && shop.pet_friendly !== true) return false; // Keep pets as is
+    // 3. Amenity Filters (Pets only for now)
+    // Filtering by wifi/chargers needs to happen after fetching details from related tables,
+    // or by querying aggregated data if available in the main 'locations' table later.
+    // if (filters.wifi_required === true && shop.has_wifi !== true) return false;
+    // if (filters.power_outlets_required === true && shop.has_chargers !== true) return false;
+    if (filters.pets === true && shop.pet_friendly !== true) return false; // Keep pets filter if applicable
 
-    // TODO: Add filtering for menu_items, quality (might require AI analysis of reviews/description)
+    // TODO: Add filtering for menu_items, quality, vibe etc. based on available data
 
     return true; // Shop passes all applicable filters
   });
@@ -565,9 +567,16 @@ Instructions:
         toast.loading(searchMessage, { id: loadingToastId });
 
         // Call the internal keyword search logic, passing the structured filters
-        // Pass the structured filters object to handleKeywordSearchInternal
+        // Refine keyword for Google Places search if needed
+        let googleSearchKeyword = filters.location_term || "coffee shop"; // Default
+        // If filters indicate amenities but location_term is generic or missing, add context
+        if ((filters.wifi_required || filters.power_outlets_required || filters.menu_items?.length) && (!filters.location_term || ["wifi", "outlet", "charging", "power", "sockets"].includes(filters.location_term.toLowerCase()))) {
+            googleSearchKeyword = `coffee shop ${filters.location_term || ''}`.trim(); // Append "coffee shop"
+        }
+
+        // Pass the potentially refined keyword and structured filters
         await handleKeywordSearchInternal(
-            filters.location_term || "coffee shop", // Use location term or default keyword for text search query
+            googleSearchKeyword,
             limit, // Pass the limit extracted by AI
             filters, // Pass the full filters object for detailed filtering
             loadingToastId
