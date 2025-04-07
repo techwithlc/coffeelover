@@ -2,7 +2,8 @@ import type { CoffeeShop } from './types';
 
 export const mockCoffeeShops: CoffeeShop[] = [
   {
-    id: 'mock1',
+    id: 'mock-uuid-1', // Placeholder UUID
+    google_place_id: 'mock-google-place-id-1', // Placeholder Google Place ID
     name: 'Example Cafe A',
     address: '123 Main St, Taipei',
     lat: 25.0330,
@@ -20,7 +21,8 @@ export const mockCoffeeShops: CoffeeShop[] = [
     images: [],
   },
   {
-    id: 'mock2',
+    id: 'mock-uuid-2', // Placeholder UUID
+    google_place_id: 'mock-google-place-id-2', // Placeholder Google Place ID
     name: 'Example Cafe B',
     address: '456 Second St, Taipei',
     lat: 25.0340,

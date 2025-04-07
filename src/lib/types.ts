@@ -18,7 +18,8 @@ export interface OpeningHours {
 
 // Coffee shop type definition
 export interface CoffeeShop {
-  id: string;
+  id: string; // Supabase internal UUID
+  google_place_id: string; // Google Place ID
   name: string;
   address?: string;
   lat?: number;

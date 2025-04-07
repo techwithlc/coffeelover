@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react'; // Import React for JSX
-import { CoffeeShop, OpeningHoursPeriod, AiFilters, AiResponse, PlaceResult, PlaceDetailsResponse, PlacesNearbyResponse } from '../lib/types'; // Assuming types are correctly defined/exported
+// Import necessary types, including PlaceDetailsResult
+import { CoffeeShop, OpeningHoursPeriod, AiFilters, AiResponse, PlaceResult, PlaceDetailsResponse, PlacesNearbyResponse, PlaceDetailsResult } from '../lib/types';
 import { supabase } from '../lib/supabaseClient';
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { toast, Toast } from 'react-hot-toast'; // Import Toast type
@@ -151,22 +152,21 @@ const CHARGING_HINT_FIELDS = 'website,editorial_summary'; // Fields that *might*
 const MENU_HINT_FIELDS = 'website,reviews'; // Fields that *might* contain menu info
 
 
-// --- Helper Function for Fetching Place Details ---
-async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Promise<CoffeeShop | null> {
+// --- Helper Function for Fetching Place Details & Upserting to Supabase ---
+async function fetchAndUpsertPlaceDetails(googlePlaceId: string, requiredFields: string[]): Promise<CoffeeShop | null> {
   const googleApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   if (!googleApiKey) {
     console.error("Missing Google Maps API Key for Place Details fetch.");
-    // Consider throwing an error or returning a specific error object
     return null;
   }
 
   // Check if Supabase client seems valid before querying DB
   if (!supabase || !supabase.from) {
-      console.error("Supabase client not initialized correctly in fetchPlaceDetails.");
-      // Decide how to handle this - maybe proceed without DB data?
+      console.error("Supabase client not initialized correctly in fetchAndUpsertPlaceDetails.");
+      return null; // Cannot proceed without Supabase client
   }
 
-  // Determine all fields needed for the API call
+  // Determine all fields needed for the Google Places API call
   const fieldsToRequestSet = new Set(BASE_DETAIL_FIELDS.split(','));
   requiredFields.forEach(field => {
     // Add hint fields based on the *semantic* requirement (wifi, pets, etc.)
@@ -181,80 +181,135 @@ async function fetchPlaceDetails(placeId: string, requiredFields: string[]): Pro
   });
 
   const uniqueFields = Array.from(fieldsToRequestSet).join(',');
-  const apiUrl = `/maps-api/place/details/json?place_id=${placeId}&fields=${uniqueFields}`; // Use the proxy path
+  const apiUrl = `/maps-api/place/details/json?place_id=${googlePlaceId}&fields=${uniqueFields}`; // Use googlePlaceId
 
+  let googleDetails: PlaceDetailsResult | null = null;
+  let apiError: Error | null = null;
+
+  // 1. Fetch details from Google Places API via proxy
   try {
     const response = await fetch(apiUrl);
     if (!response.ok) {
-      // Log more details for HTTP errors
       const errorBody = await response.text();
       console.error(`Place Details API HTTP error! Status: ${response.status}, URL: ${apiUrl}, Body: ${errorBody}`);
       throw new Error(`Place Details API HTTP error! status: ${response.status}`);
     }
     const data: PlaceDetailsResponse = await response.json();
-
     if (data.status === 'OK' && data.result) {
-      const details = data.result;
-      // --- Remove Supabase query for columns not in 'locations' table ---
-      // The following query was causing errors because has_wifi, etc. are not in the locations table.
-      // We will handle fetching related data (like wifi details) separately later.
-      /*
-      let dbData: Partial<CoffeeShop> | null = null;
-      let dbError: unknown = null;
-      if (supabase && supabase.from) {
-        try {
-            const { data: fetchedDbData, error: fetchDbError } = await supabase
-            .from('locations')
-            .select('has_wifi, has_chargers, charger_count, pet_friendly')
-            .eq('id', details.place_id)
-            .maybeSingle();
-            dbData = fetchedDbData;
-            dbError = fetchDbError;
-            if (dbError && typeof dbError === 'object' && dbError !== null && 'code' in dbError && (dbError as { code: string }).code !== 'PGRST116') {
-               console.error(`Supabase query error for ${details.place_id}:`, dbError);
-            }
-        } catch (supabaseQueryError) {
-             console.error(`Supabase query exception for ${details.place_id}:`, supabaseQueryError);
-             dbError = supabaseQueryError;
-        }
-      } else {
-          console.warn(`Supabase client not available, skipping DB query for ${details.place_id}`);
-      }
-      */
-
-      // Construct the CoffeeShop object using only Google Places data for now
-      const coffeeShopData: CoffeeShop = {
-        id: details.place_id,
-        name: details.name || 'N/A', // Provide default if name is missing
-        lat: details.geometry?.location.lat,
-        lng: details.geometry?.location.lng,
-        address: details.formatted_address || 'Address not available',
-        rating: details.rating,
-        opening_hours: details.opening_hours,
-        utc_offset_minutes: details.utc_offset_minutes,
-        // --- Set related fields to undefined/default for now ---
-        has_wifi: undefined, // Set to undefined as we are not fetching it here
-        pet_friendly: undefined, // Set to undefined
-        has_chargers: undefined, // Set to undefined
-        charger_count: undefined, // Set to undefined
-        // --- Other details from Google ---
-        price_range: details.price_level?.toString(),
-        description: details.editorial_summary?.overview,
-        // TODO: Potentially parse menu_highlights from reviews or website if needed by filters
-        menu_highlights: [], // Placeholder
-      };
-
-      return coffeeShopData;
-
+      googleDetails = data.result;
     } else {
-      // Log API errors clearly
-      console.error(`Place Details API Error for ${placeId}: ${data.status} - ${data.error_message || 'No error message provided.'}`);
-      return null;
+      console.error(`Place Details API Error for ${googlePlaceId}: ${data.status} - ${data.error_message || 'No error message provided.'}`);
+      apiError = new Error(`Google Places API Error: ${data.status}`);
+      // Don't return null yet, try finding in DB first
     }
-  } catch (error: unknown) {
-    // Log any other fetch/processing errors
-    const message = error instanceof Error ? error.message : 'Unknown error during fetchPlaceDetails';
-    console.error(`Failed to fetch details for ${placeId}:`, message, error);
+  } catch (error) {
+    apiError = error instanceof Error ? error : new Error('Unknown error fetching Google details');
+    console.error(`Failed to fetch Google details for ${googlePlaceId}:`, apiError.message);
+    // Don't return null yet, try finding in DB first
+  }
+
+  // 2. Check if location exists in Supabase 'locations' table by google_place_id
+  try {
+    const { data: existingLocationData, error: selectError } = await supabase
+      .from('locations')
+      .select('*') // Select all columns including the UUID 'id'
+      .eq('google_place_id', googlePlaceId)
+      .maybeSingle();
+
+    if (selectError) {
+      console.error(`Error checking Supabase for ${googlePlaceId}:`, selectError);
+      // If Google fetch also failed, return null. Otherwise, proceed to insert.
+      if (apiError) return null;
+    }
+
+    // 3a. If location exists in Supabase, return it (map to CoffeeShop type)
+    if (existingLocationData) {
+      // Map Supabase row to CoffeeShop type (ensure all fields match)
+      // We need to explicitly cast because Supabase returns generic Row type
+      const existingLocation = existingLocationData as CoffeeShop; // Assuming DB schema matches CoffeeShop type well enough
+      return {
+        ...existingLocation,
+        // Ensure required fields from CoffeeShop type are present and merge/prioritize
+        id: existingLocation.id, // Use the Supabase UUID
+        google_place_id: existingLocation.google_place_id,
+        name: existingLocation.name || googleDetails?.name || 'N/A', // Use DB name, fallback to Google or N/A
+        address: existingLocation.address || googleDetails?.formatted_address,
+        lat: existingLocation.lat || googleDetails?.geometry?.location.lat,
+        lng: existingLocation.lng || googleDetails?.geometry?.location.lng,
+        rating: existingLocation.rating || googleDetails?.rating,
+        // Merge opening hours if needed, or prioritize one source (e.g., Google's)
+        opening_hours: googleDetails?.opening_hours || existingLocation.opening_hours,
+        utc_offset_minutes: googleDetails?.utc_offset_minutes || existingLocation.utc_offset_minutes,
+        price_range: existingLocation.price_range || googleDetails?.price_level?.toString(),
+        description: existingLocation.description || googleDetails?.editorial_summary?.overview,
+        // Keep user-contributed fields from DB if they exist
+        has_wifi: existingLocation.has_wifi,
+        has_chargers: existingLocation.has_chargers,
+        charger_count: existingLocation.charger_count,
+        pet_friendly: existingLocation.pet_friendly,
+        menu_highlights: existingLocation.menu_highlights || [],
+        images: existingLocation.images || [],
+        created_at: existingLocation.created_at,
+        updated_at: existingLocation.updated_at,
+      };
+    }
+
+    // 3b. If location doesn't exist AND Google fetch succeeded, insert it
+    if (!existingLocationData && googleDetails) {
+      const { data: newLocationData, error: insertError } = await supabase
+        .from('locations')
+        .insert({
+          google_place_id: googlePlaceId,
+          name: googleDetails.name || 'N/A',
+          address: googleDetails.formatted_address,
+          lat: googleDetails.geometry?.location.lat,
+          lng: googleDetails.geometry?.location.lng,
+          rating: googleDetails.rating,
+          // Add other relevant fields from googleDetails if they exist in your 'locations' table
+          // price_level: googleDetails.price_level, // Example
+          // description: googleDetails.editorial_summary?.overview, // Example
+        })
+        .select('*') // Select the newly inserted row including the generated UUID 'id'
+        .single();
+
+      if (insertError) {
+        console.error(`Error inserting new location ${googlePlaceId} into Supabase:`, insertError);
+        return null; // Failed to insert
+      }
+
+      if (newLocationData) {
+         // Map the newly inserted Supabase row to CoffeeShop type
+         const newLocation = newLocationData as CoffeeShop; // Cast needed
+         return {
+            ...newLocation,
+            // Ensure required fields are present, potentially adding defaults from Google
+            id: newLocation.id, // Use the new Supabase UUID
+            google_place_id: newLocation.google_place_id,
+            opening_hours: googleDetails.opening_hours, // Add opening hours from Google
+            utc_offset_minutes: googleDetails.utc_offset_minutes, // Add offset from Google
+            price_range: googleDetails.price_level?.toString(), // Add price from Google
+            description: googleDetails.editorial_summary?.overview, // Add description from Google
+            // Set user-contributed fields to undefined initially
+            has_wifi: undefined,
+            has_chargers: undefined,
+            charger_count: undefined,
+            pet_friendly: undefined, // Could try basic text analysis on description later
+            menu_highlights: [], // Default empty
+            images: [], // Default empty
+         };
+      }
+    }
+
+    // If location doesn't exist and Google fetch failed, return null
+    if (!existingLocationData && !googleDetails) {
+       console.error(`Failed to fetch from Google and location not in DB for ${googlePlaceId}`);
+       return null;
+    }
+
+    return null; // Should not be reached, but acts as a fallback
+
+  } catch (error) {
+    console.error(`General error in fetchAndUpsertPlaceDetails for ${googlePlaceId}:`, error);
     return null;
   }
 }
@@ -363,11 +418,12 @@ export function useCoffeeSearch(
       // This try/catch handles the details fetching and filtering part
       try {
         toast.loading(`Fetching details for top ${Math.min(candidateShops.length, 10)} results...`, { id: internalLoadingToastId });
-        // --- Limit detail fetches to the first 10 candidates ---
+        // --- Limit detail fetches/upserts to the first 10 candidates ---
         const candidatesToFetchDetails = candidateShops.slice(0, 10);
-        const detailPromises = candidatesToFetchDetails.map(candidate => fetchPlaceDetails(candidate.place_id, detailFieldsToFetch));
+        // Use fetchAndUpsertPlaceDetails now
+        const detailPromises = candidatesToFetchDetails.map(candidate => fetchAndUpsertPlaceDetails(candidate.place_id, detailFieldsToFetch));
         const detailedResults = await Promise.all(detailPromises);
-        processedShops = detailedResults.filter((shop): shop is CoffeeShop => shop !== null);
+        processedShops = detailedResults.filter((shop): shop is CoffeeShop => shop !== null); // Filter out nulls if fetch/upsert failed
 
         // Apply criteria filters (excluding openNow initially)
         const criteriaFilteredShops = aiFilters ? filterShopsByCriteria(processedShops, aiFilters, false) : processedShops;
@@ -627,3 +683,47 @@ Instructions:
     setMapCenterToUpdate // Allow App to reset the update signal
   };
 }
+
+</final_file_content>
+
+IMPORTANT: For any future changes to this file, use the final_file_content shown above as your reference. This content reflects the current state of the file, including any auto-formatting (e.g., if you used single quotes but the formatter converted them to double quotes). Always base your SEARCH/REPLACE operations on this final version to ensure accuracy.
+
+
+
+New problems detected after saving the file:
+src/hooks/useCoffeeSearch.tsx
+- [eslint Error] Line 2: 'AiResponse' is defined but never used.<environment_details>
+# VSCode Visible Files
+src/hooks/useCoffeeSearch.tsx
+
+# VSCode Open Tabs
+supabase/migrations/20250404174824_add_wifi_charger_info.sql
+netlify/functions/places-proxy.ts
+src/components/Map.tsx
+supabase/migrations/20250406153826_add_wifi_details_and_ratings.sql
+.gitignore
+README.md
+supabase/config.toml
+.env
+src/components/LandingPage.tsx
+src/components/Header.tsx
+src/hooks/useCoffeeSearch.ts
+src/vite-env.d.ts
+package.json
+src/App.tsx
+src/components/LocationDetails.tsx
+src/lib/mockData.ts
+src/hooks/useCoffeeSearch.tsx
+src/lib/types.ts
+src/components/Sidebar.tsx
+public/favicon.png
+index.html
+src/lib/supabaseClient.ts
+vite.config.ts
+
+# Current Time
+4/8/2025, 2:12:51 AM (Asia/Taipei, UTC+8:00)
+
+# Current Mode
+ACT MODE
+</environment_details>
