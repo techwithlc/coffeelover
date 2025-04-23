@@ -256,6 +256,15 @@ async function fetchAndUpsertPlaceDetails(googlePlaceId: string, requiredFields:
 
     // 3b. If location doesn't exist AND Google fetch succeeded, insert it
     if (!existingLocationData && googleDetails) {
+      // Get the current user ID to satisfy RLS policy
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.error("User not authenticated. Cannot insert location.");
+        // Potentially show a toast message to the user here
+        return null; // Cannot insert without a user ID
+      }
+      const userId = user.id;
+
       const { data: newLocationData, error: insertError } = await supabase
         .from('locations')
         .insert({
@@ -265,6 +274,7 @@ async function fetchAndUpsertPlaceDetails(googlePlaceId: string, requiredFields:
           lat: googleDetails.geometry?.location.lat,
           lng: googleDetails.geometry?.location.lng,
           rating: googleDetails.rating,
+          user_id: userId, // Include the user ID
           // Add other relevant fields from googleDetails if they exist in your 'locations' table
           // price_level: googleDetails.price_level, // Example
           // description: googleDetails.editorial_summary?.overview, // Example
