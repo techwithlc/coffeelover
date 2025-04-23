@@ -30,6 +30,12 @@ interface PlaceDetailsResponse {
   error_message?: string;
 }
 
+// Define structure for Photo Proxy response (needed for fetching image URLs)
+interface PhotoProxyResponse {
+  imageUrl?: string;
+  error?: string;
+}
+
 // Define type for Wi-Fi details fetched from Supabase
 type WifiDetail = Database['public']['Tables']['location_wifi_details']['Row'];
 // Define type for Charger details (assuming table structure)
@@ -83,10 +89,12 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   const [isSubmittingCharger, setIsSubmittingCharger] = useState(false);
   const [chargerSubmitError, setChargerSubmitError] = useState<string | null>(null);
   const [chargerSubmitSuccess, setChargerSubmitSuccess] = useState<string | null>(null);
+  const [fetchedImageUrls, setFetchedImageUrls] = useState<string[]>([]); // State for actual image URLs
+  const [isLoadingImages, setIsLoadingImages] = useState(false); // Loading state for images
 
 
-  // Helper to construct the PROXY URL for fetching the actual photo URL
-  const getPhotoProxyUrl = (photoReference: string, maxWidth = 800) => { // Increased default maxWidth
+  // Helper to construct the PROXY URL for fetching the actual photo URL JSON
+  const getPhotoProxyUrl = (photoReference: string, maxWidth = 800) => {
     return `/maps-api/place/photo?maxwidth=${maxWidth}&photoreference=${photoReference}`;
   };
 
@@ -131,7 +139,44 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
     fetchData();
   }, [location.google_place_id]); // Depend on google_place_id
 
-  // Removed effect that fetched single photoUrl
+  // Effect to fetch actual image URLs from the proxy
+  useEffect(() => {
+    const fetchImageUrls = async () => {
+      if (!location.images || location.images.length === 0) {
+        setFetchedImageUrls([]);
+        return;
+      }
+
+      setIsLoadingImages(true);
+      const urls: string[] = [];
+      // Fetch up to 3 images
+      const imageRefsToFetch = location.images.slice(0, 3);
+
+      for (const photoRef of imageRefsToFetch) {
+        const proxyUrl = getPhotoProxyUrl(photoRef);
+        try {
+          const response = await fetch(proxyUrl);
+          if (!response.ok) {
+            console.error(`Photo proxy error for ${photoRef}! status: ${response.status}`);
+            continue; // Skip this image on error
+          }
+          const data: PhotoProxyResponse = await response.json(); // Expect JSON { imageUrl: "..." }
+          if (data.imageUrl) {
+            urls.push(data.imageUrl);
+          } else {
+            console.error(`Photo proxy did not return an imageUrl for ${photoRef}:`, data.error);
+          }
+        } catch (error) {
+          console.error(`Failed to fetch photo URL via proxy for ${photoRef}:`, error);
+        }
+      }
+      setFetchedImageUrls(urls);
+      setIsLoadingImages(false);
+    };
+
+    fetchImageUrls();
+  }, [location.images]); // Re-run when location images change
+
 
   // Effect to fetch Wi-Fi Details from Supabase
   useEffect(() => {
@@ -458,19 +503,24 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
          </div>
 
          {/* Photo Carousel */}
-         {location.images && location.images.length > 0 ? (
+         {isLoadingImages ? (
+            <div className="mb-4 md:mb-6 rounded-lg overflow-hidden bg-gray-200 h-48 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500 mr-2"></div>
+                <p className="text-gray-500 text-sm">Loading photos...</p>
+            </div>
+         ) : fetchedImageUrls.length > 0 ? (
            <div className="mb-4 md:mb-6 rounded-lg overflow-hidden bg-gray-100">
              <Carousel
-               showThumbs={false}
+               showThumbs={false} // Thumbnails might be complex with proxy fetching
                showStatus={false}
-               infiniteLoop={true}
+               infiniteLoop={fetchedImageUrls.length > 1} // Only loop if more than one image
                useKeyboardArrows={true}
-               className="location-carousel" // Add a class for potential styling
+               className="location-carousel"
              >
-               {location.images.slice(0, 3).map((photoRef, index) => ( // Show max 3 photos
+               {fetchedImageUrls.map((imageUrl, index) => (
                  <div key={index}>
                    <img
-                     src={getPhotoProxyUrl(photoRef)} // Fetch photo using proxy
+                     src={imageUrl} // Use the fetched final image URL
                      alt={`Photo ${index + 1} of ${location.name}`}
                      className="w-full object-cover max-h-64" // Limit height
                    />
