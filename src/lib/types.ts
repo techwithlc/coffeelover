@@ -37,7 +37,7 @@ export interface CoffeeShop {
   description?: string;
   rating?: number;
   menu_highlights?: string[];
-  images?: string[];
+  images?: string[]; // Stores photo references or URLs
   created_at?: string;
   updated_at?: string;
 }
@@ -86,6 +86,15 @@ export interface PlaceReview {
   text?: string;
   time?: number; // Unix timestamp
 }
+
+// Structure for Google Place Photos
+export interface PlacePhoto {
+  photo_reference: string;
+  height: number;
+  width: number;
+  html_attributions?: string[];
+}
+
 export interface PlaceDetailsResult {
   place_id: string;
   name?: string;
@@ -96,6 +105,7 @@ export interface PlaceDetailsResult {
   reviews?: PlaceReview[];
   website?: string;
   editorial_summary?: { overview?: string };
+  photos?: PlacePhoto[]; // Added photos field
   price_level?: number;
   utc_offset_minutes?: number;
 }

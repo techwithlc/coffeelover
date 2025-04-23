@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabaseClient'; // Corrected import name
 import { Database } from '../lib/database.types'; // Import generated types
 import { QRCodeCanvas } from 'qrcode.react'; // Import QR Code component
 import { CoffeeShop } from '../lib/types';
+import { Carousel } from 'react-responsive-carousel';
+import "react-responsive-carousel/lib/styles/carousel.min.css"; // requires a loader
 
 // Define structure for Place Details response
 interface PlaceDetailsResult {
@@ -26,12 +28,6 @@ interface PlaceDetailsResponse {
   result?: PlaceDetailsResult;
   status: string;
   error_message?: string;
-}
-
-// Define structure for Photo Proxy response
-interface PhotoProxyResponse {
-  imageUrl?: string;
-  error?: string;
 }
 
 // Define type for Wi-Fi details fetched from Supabase
@@ -57,7 +53,7 @@ interface Props {
 
 export default function LocationDetails({ location, isFavorite, onToggleFavorite, onClose, userId }: Props) { // Destructure userId
   const [placeDetails, setPlaceDetails] = useState<PlaceDetailsResult | null>(null);
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // Removed photoUrl state
   const [isLoadingDetails, setIsLoadingDetails] = useState(true);
   const [wifiDetails, setWifiDetails] = useState<WifiDetail[]>([]);
   const [isLoadingWifi, setIsLoadingWifi] = useState(true);
@@ -90,20 +86,30 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
 
 
   // Helper to construct the PROXY URL for fetching the actual photo URL
-  const getPhotoProxyUrl = (photoReference: string, maxWidth = 400) => {
+  const getPhotoProxyUrl = (photoReference: string, maxWidth = 800) => { // Increased default maxWidth
     return `/maps-api/place/photo?maxwidth=${maxWidth}&photoreference=${photoReference}`;
   };
 
-  // Effect to fetch Place Details
+  // Helper function to render price level
+  const renderPriceLevel = (priceLevelString?: string): string => {
+    const priceLevel = priceLevelString ? parseInt(priceLevelString, 10) : NaN;
+    if (isNaN(priceLevel) || priceLevel < 0) return ''; // Handle invalid or missing data
+    if (priceLevel === 0) return 'Free'; // Google uses 0 for free sometimes
+    return '$'.repeat(priceLevel); // Repeat '$' based on the level (1-4)
+  };
+
+
+  // Effect to fetch Place Details (excluding photos, as we use location.images)
   useEffect(() => {
     const fetchData = async () => {
       setIsLoadingDetails(true);
       setPlaceDetails(null);
-      setPhotoUrl(null);
+      // Removed setPhotoUrl(null);
 
       // No API key needed here, proxy handles it
-      const fields = 'formatted_address,opening_hours,website,photo,name';
-      const detailsApiUrl = `/maps-api/place/details/json?placeid=${location.id}&fields=${fields}`;
+      // Removed 'photo' from fields as we use location.images now
+      const fields = 'formatted_address,opening_hours,website,name';
+      const detailsApiUrl = `/maps-api/place/details/json?placeid=${location.google_place_id}&fields=${fields}`; // Use google_place_id
 
       try {
         const detailsResponse = await fetch(detailsApiUrl);
@@ -118,41 +124,14 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
       } catch (error) {
         console.error('Failed to fetch place details:', error);
       } finally {
-         // Set loading false only after details attempt
          setIsLoadingDetails(false);
       }
     };
 
     fetchData();
-  }, [location.id]);
+  }, [location.google_place_id]); // Depend on google_place_id
 
-  // Separate effect to fetch photo URL *after* placeDetails are loaded
-  useEffect(() => {
-    const fetchPhoto = async () => {
-      if (placeDetails?.photos && placeDetails.photos.length > 0) {
-        const photoRef = placeDetails.photos[0].photo_reference;
-        const proxyUrl = getPhotoProxyUrl(photoRef, 800);
-        try {
-          const photoResponse = await fetch(proxyUrl);
-          if (!photoResponse.ok) throw new Error(`Photo proxy error! status: ${photoResponse.status}`);
-          const photoData: PhotoProxyResponse = await photoResponse.json();
-          if (photoData.imageUrl) {
-            setPhotoUrl(photoData.imageUrl);
-          } else {
-            console.error("Photo proxy did not return an imageUrl:", photoData.error);
-          }
-        } catch (error) {
-          console.error("Failed to fetch photo URL via proxy:", error);
-        }
-      } else {
-        setPhotoUrl(null);
-      }
-    };
-
-    if (placeDetails) {
-      fetchPhoto();
-    }
-  }, [placeDetails]);
+  // Removed effect that fetched single photoUrl
 
   // Effect to fetch Wi-Fi Details from Supabase
   useEffect(() => {
@@ -476,22 +455,34 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
               </svg>
             </button>
           </div>
-        </div>
+         </div>
 
-         {/* Photo */}
-         {photoUrl ? (
-           <div className="mb-4 md:mb-6 rounded-lg overflow-hidden">
-             <img
-                src={photoUrl}
-                alt={`Photo of ${location.name}`}
-                className="w-full object-cover" // Removed h-48
-              />
-            </div>
-         ) : isLoadingDetails ? (
+         {/* Photo Carousel */}
+         {location.images && location.images.length > 0 ? (
+           <div className="mb-4 md:mb-6 rounded-lg overflow-hidden bg-gray-100">
+             <Carousel
+               showThumbs={false}
+               showStatus={false}
+               infiniteLoop={true}
+               useKeyboardArrows={true}
+               className="location-carousel" // Add a class for potential styling
+             >
+               {location.images.slice(0, 3).map((photoRef, index) => ( // Show max 3 photos
+                 <div key={index}>
+                   <img
+                     src={getPhotoProxyUrl(photoRef)} // Fetch photo using proxy
+                     alt={`Photo ${index + 1} of ${location.name}`}
+                     className="w-full object-cover max-h-64" // Limit height
+                   />
+                 </div>
+               ))}
+             </Carousel>
+           </div>
+         ) : (
             <div className="mb-4 md:mb-6 rounded-lg overflow-hidden bg-gray-200 h-48 flex items-center justify-center">
-                <p className="text-gray-500 text-sm">Loading photo...</p>
+                <p className="text-gray-500 text-sm">No photos available</p>
             </div>
-         ) : null }
+         )}
 
         {/* Coffee Shop Details */}
         <div className="mb-6">
@@ -528,7 +519,7 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
             {location.price_range && (
               <div className="flex items-center gap-2">
                 <DollarSign size={18} className="text-gray-500" />
-                <span className="text-sm">{location.price_range}</span>
+                <span className="text-sm font-medium text-gray-700">{renderPriceLevel(location.price_range)}</span>
               </div>
             )}
             {/* Charger info display removed from here, handled in dedicated section */}

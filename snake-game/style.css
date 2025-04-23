@@ -1,0 +1,41 @@
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #e0f2f7; /* Light blue background */
+    margin: 0;
+    font-family: 'Arial', sans-serif;
+}
+
+.game-container {
+    text-align: center;
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    color: #00796b; /* Teal color */
+    margin-bottom: 10px;
+}
+
+.score-board {
+    font-size: 1.2em;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+#gameCanvas {
+    border: 5px solid #004d40; /* Darker teal border */
+    background-color: #b2dfdb; /* Lighter teal canvas background */
+    display: block; /* Prevents extra space below canvas */
+    margin: 0 auto; /* Center canvas */
+}
+
+.instructions {
+    margin-top: 15px;
+    color: #555;
+    font-size: 0.9em;
+}

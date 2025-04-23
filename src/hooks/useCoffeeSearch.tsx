@@ -145,7 +145,7 @@ const filterShopsByCriteria = (shops: CoffeeShop[], filters: AiFilters, checkOpe
 
 
 // --- Constants for Place Details Fetching ---
-const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours,price_level'; // Removed unsupported utc_offset_minutes
+const BASE_DETAIL_FIELDS = 'place_id,name,geometry,formatted_address,rating,opening_hours,price_level,photos'; // Added photos
 const WIFI_HINT_FIELDS = 'website,editorial_summary'; // Fields that *might* contain wifi info
 const PETS_HINT_FIELDS = 'website,editorial_summary'; // Fields that *might* contain pet info
 const CHARGING_HINT_FIELDS = 'website,editorial_summary'; // Fields that *might* contain charging info
@@ -248,7 +248,8 @@ async function fetchAndUpsertPlaceDetails(googlePlaceId: string, requiredFields:
         charger_count: existingLocation.charger_count,
         pet_friendly: existingLocation.pet_friendly,
         menu_highlights: existingLocation.menu_highlights || [],
-        images: existingLocation.images || [],
+        // Prioritize Google photos if available, otherwise use DB photos
+        images: googleDetails?.photos?.map(p => p.photo_reference) || existingLocation.images || [],
         created_at: existingLocation.created_at,
         updated_at: existingLocation.updated_at,
       };
@@ -263,7 +264,10 @@ async function fetchAndUpsertPlaceDetails(googlePlaceId: string, requiredFields:
         // Potentially show a toast message to the user here
         return null; // Cannot insert without a user ID
       }
+      // Correct placement for the end of the if(!user) block is implicitly handled by the code flow continuing
+
       const userId = user.id;
+      // Debugging logs removed
 
       const { data: newLocationData, error: insertError } = await supabase
         .from('locations')
@@ -305,7 +309,8 @@ async function fetchAndUpsertPlaceDetails(googlePlaceId: string, requiredFields:
             charger_count: undefined,
             pet_friendly: undefined, // Could try basic text analysis on description later
             menu_highlights: [], // Default empty
-            images: [], // Default empty
+            // Store photo references from Google details
+            images: googleDetails.photos?.map(p => p.photo_reference) || [],
          };
       }
     }
@@ -393,7 +398,17 @@ export function useCoffeeSearch(
       const lng = searchLocation.lng;
       const requestedRadiusKm = aiFilters?.distanceKm ?? null;
       // Use the proxy path defined in vite.config.ts or netlify.toml
-      const searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&type=cafe`;
+      let searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&type=cafe`;
+
+      // Only add location bias if the keyword isn't a specific place/city identified by the AI
+      // or if the user explicitly asked for "near me".
+      if (!aiFilters?.location_term || aiFilters.location_term === "near me") {
+        searchApiUrl += `&location=${lat},${lng}`;
+        // Optionally add radius if not searching for a specific named location
+        // searchApiUrl += `&radius=50000`; // Example: 50km radius if using location bias
+      }
+      // If location_term is a specific city/place, we omit the lat/lng bias
+      // to let Google prioritize the text query for that location.
 
       try {
         const response = await fetch(searchApiUrl);
@@ -541,7 +556,7 @@ User Request: "${prompt}"
 Current Location Context (Optional, provide if available): ${userLocation ? `{ "latitude": ${userLocation.lat}, "longitude": ${userLocation.lng} }` : null}
 
 Available Filter Criteria & Mapping:
-- Location: City, district, or general area (e.g., "信義區", "Taipei", "near me"). Extract as \`location_term\`.
+- Location: City name (e.g., "Taipei", "Tainan", "台中"), district (e.g., "信義區"), or general area ("near me"). Extract the most specific location mentioned as \`location_term\`. Prioritize city/district names over vague terms if both are present.
 - Time Limit: "不限時" (no time limit). Map to \`no_time_limit: true\`.
 - Wi-Fi: "WiFi 快", "有 WiFi". Map to \`wifi_required: true\`. If speed mentioned (e.g., "快", "穩定"), map to \`wifi_quality_min: 4\` (assuming a 1-5 scale later).
 - Power Outlets: "有插座", "charging". Map to \`power_outlets_required: true\`.
@@ -574,7 +589,8 @@ Instructions:
 - If the query is unrelated to finding coffee shops, set \`query_type\` to "unrelated", \`filters\` to null, and provide an explanation.
 - If the query is ambiguous and needs clarification, set \`query_type\` to "clarification_needed", \`filters\` to null, and provide the clarification question in \`explanation\`.
 - If a criterion is not mentioned, set its corresponding filter value to \`null\`.
-- For "near me" location, set \`location_term\` to "near me" and rely on the provided latitude/longitude.
+- If a city/district is mentioned (e.g., "Find cafes in Taipei"), extract it as \`location_term\` (e.g., "Taipei").
+- If only "near me" or no location is mentioned, set \`location_term\` to "near me" and rely on the provided latitude/longitude.
 - Be strict with the JSON format. Only output the JSON object.`;
       // --- End of Enhanced Prompt Template ---
 
