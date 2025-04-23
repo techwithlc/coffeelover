@@ -1,7 +1,9 @@
-import React, { useState, useEffect, FormEvent, useCallback } from 'react';
-import Map from './components/Map';
-import Sidebar from './components/Sidebar';
-import LocationDetails from './components/LocationDetails';
+import React, { useState, useEffect, FormEvent, useCallback, Suspense, lazy } from 'react';
+// Lazy load large components for faster initial load
+const Map = lazy(() => import('./components/Map'));
+const Sidebar = lazy(() => import('./components/Sidebar'));
+const LocationDetails = lazy(() => import('./components/LocationDetails'));
+
 import { Toaster, toast, Toast } from 'react-hot-toast';
 import type { CoffeeShop } from './lib/types'; // Removed unused OpeningHours, OpeningHoursPeriod
 import { supabase } from './lib/supabaseClient';
@@ -27,6 +29,20 @@ const renderClosableToast = (message: string, toastInstance: Toast, type: 'succe
   </div>
 );
 
+
+// ErrorBoundary for catching rendering errors
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) { console.error('ErrorBoundary caught:', error, info); }
+  render() {
+    if (this.state.hasError) return <div className="p-8 text-red-600">Something went wrong. Please reload the page.</div>;
+    return this.props.children;
+  }
+}
 
 function App() {
   // State for view mode
@@ -127,59 +143,65 @@ function App() {
   const handleSelectLocation = (location: CoffeeShop) => { setSelectedLocation(location); };
   const handleLogout = async () => { await supabase.auth.signOut(); };
 
-
   // --- Render Logic ---
   return (
-    <>
-      {viewMode === 'landing' ? (
-        // --- Landing Page View ---
-        <LandingPage
-          session={session}
-          onLoginClick={() => setShowAuthModal(true)}
-          handleLogout={handleLogout}
-          landingPrompt={landingPrompt}
-          setLandingPrompt={setLandingPrompt}
-          handleLandingSearchSubmit={handleLandingSearchSubmit}
-          handleHintClick={handleHintClick}
-          isLoading={isLoading || isGenerating} // Use hook's loading state
-          requestLocation={requestLocation}
-        />
-      ) : (
-        // --- Map View ---
-        <div className="flex flex-col h-screen">
-          <Header
-            prompt={prompt}
-            setPrompt={setPrompt}
-            isGenerating={isGenerating || isLoading} // Use hook's loading state
-            handlePromptSubmit={handleHeaderSearchSubmit} // Use updated handler
+    <ErrorBoundary>
+      <Toaster position="top-right" />
+      <Suspense fallback={<div className="flex items-center justify-center h-screen"><span className="loader" /> Loading app...</div>}>
+        {viewMode === 'landing' ? (
+          <LandingPage
+            session={session}
+            onLoginClick={() => setShowAuthModal(true)}
+            handleLogout={handleLogout}
+            landingPrompt={landingPrompt}
+            setLandingPrompt={setLandingPrompt}
+            handleLandingSearchSubmit={handleLandingSearchSubmit}
+            handleHintClick={handleHintClick}
+            isLoading={isLoading}
             requestLocation={requestLocation}
-            hasLocation={!!userLocation}
-            onLogoClick={() => {
-              setViewMode('landing');
-              setPrompt('');
-              setLandingPrompt('');
-              // Clear search results via hook? Or just let them be cleared on next search?
-              // For now, let App manage view/prompt state, hook manages search results.
-              setSelectedLocation(null);
-            }}
           />
-          <div className="flex flex-1 overflow-hidden">
-            {/* Use searchResults from hook */}
-            <Sidebar locations={searchResults} onSelectLocation={handleSelectLocation} className="hidden md:flex w-96 flex-col" />
-            <div className="flex-1 relative">
-              {/* Use searchResults from hook */}
-              <Map center={currentMapCenter} locations={searchResults} onMarkerClick={handleSelectLocation} favoriteIds={favoriteIds} />
-              {/* Use hook's isLoading state */}
-              {isLoading && ( <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 z-10"> <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div> </div> )}
-            </div>
+        ) : (
+          <div className="flex h-screen">
+            <Sidebar
+              locations={searchResults}
+              onSelectLocation={handleSelectLocation}
+              className="w-80"
+            />
+            <main className="flex-1 relative">
+              <Header
+                prompt={prompt}
+                setPrompt={setPrompt}
+                isGenerating={isGenerating}
+                handlePromptSubmit={handleHeaderSearchSubmit} 
+                requestLocation={requestLocation}
+                hasLocation={!!userLocation}
+                onLogoClick={() => {
+                  setViewMode('landing');
+                  setPrompt('');
+                  setLandingPrompt('');
+                  setSelectedLocation(null);
+                }}
+              />
+              <Map
+                center={currentMapCenter}
+                locations={searchResults}
+                onMarkerClick={handleSelectLocation}
+                favoriteIds={favoriteIds}
+              />
+              {selectedLocation && (
+                <LocationDetails
+                  location={selectedLocation}
+                  onClose={() => setSelectedLocation(null)}
+                  isFavorite={favoriteIds.has(selectedLocation.id)}
+                  onToggleFavorite={handleToggleFavorite}
+                  userId={session?.user?.id ?? null}
+                />
+              )}
+            </main>
           </div>
-          {selectedLocation && (
-            <LocationDetails location={selectedLocation} isFavorite={favoriteIds.has(selectedLocation.id)} onToggleFavorite={handleToggleFavorite} onClose={() => setSelectedLocation(null)} userId={session?.user?.id ?? null} />
-          )}
-        </div>
-      )}
+        )}
+      </Suspense>
 
-      <Toaster position="top-center" reverseOrder={false} />
 
       {/* Auth Modal (Keep) */}
       {showAuthModal && (
@@ -190,7 +212,7 @@ function App() {
           </div>
         </div>
       )}
-    </>
+    </ErrorBoundary>
   );
 }
 
