@@ -4,13 +4,15 @@ A React + TypeScript + Supabase app for discovering and contributing info about 
 
 ## Features
 
-- Natural language search powered by Gemini AI
-- Filters for Wi-Fi, power outlets, price, vibe, etc.
-- Google Places API integration
+- Natural language search powered by Gemini AI (understands city names, filters, etc.)
+- Filters for Wi-Fi, power outlets, price, vibe, open hours, etc.
+- Google Places API integration for shop details, photos, and search
+- Displays up to 3 photos per shop in an image carousel
+- Shows accurate price level (e.g., $, $$, $$$)
 - Supabase backend with RLS policies
 - User-contributed Wi-Fi passwords, charger info, and ratings
 - OAuth login with Google and GitHub
-- Netlify deployment
+- Netlify deployment with serverless function proxy for Google API
 
 ## Architecture Overview
 
