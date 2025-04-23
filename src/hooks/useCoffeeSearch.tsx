@@ -261,7 +261,7 @@ async function fetchAndUpsertPlaceDetails(googlePlaceId: string, requiredFields:
         .insert({
           google_place_id: googlePlaceId,
           name: googleDetails.name || 'N/A',
-          address: googleDetails.formatted_address,
+          formatted_address: googleDetails.formatted_address, // Use likely DB column name
           lat: googleDetails.geometry?.location.lat,
           lng: googleDetails.geometry?.location.lng,
           rating: googleDetails.rating,
