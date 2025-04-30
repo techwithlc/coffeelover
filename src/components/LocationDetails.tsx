@@ -48,6 +48,9 @@ interface ChargerDetail {
   created_at: string;
 }
 
+// Define type for a single rating fetched from Supabase
+type LocationRating = Database['public']['Tables']['location_ratings']['Row'];
+
 
 interface Props {
   location: CoffeeShop;
@@ -92,6 +95,10 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
   const [fetchedImageUrls, setFetchedImageUrls] = useState<string[]>([]); // State for actual image URLs
   const [isLoadingImages, setIsLoadingImages] = useState(false); // Loading state for images
 
+  // State for existing ratings
+  const [existingRatings, setExistingRatings] = useState<LocationRating[]>([]);
+  const [isLoadingRatings, setIsLoadingRatings] = useState(true);
+
 
   // Helper to construct the PROXY URL for fetching the actual photo URL JSON
   const getPhotoProxyUrl = (photoReference: string, maxWidth = 800) => {
@@ -104,6 +111,23 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
     if (isNaN(priceLevel) || priceLevel < 0) return ''; // Handle invalid or missing data
     if (priceLevel === 0) return 'Free'; // Google uses 0 for free sometimes
     return '$'.repeat(priceLevel); // Repeat '$' based on the level (1-4)
+  };
+
+  // Helper function to render star icons based on rating
+  const renderStars = (rating: number | null) => {
+    if (rating === null) return <span className="text-gray-400 text-xs">Not rated</span>;
+    return (
+      <div className="flex">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            size={16} // Consistent size for stars in the list
+            className={star <= rating ? 'text-yellow-500' : 'text-gray-300'}
+            fill={star <= rating ? 'currentColor' : 'none'}
+          />
+        ))}
+      </div>
+    );
   };
 
 
@@ -239,6 +263,33 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
 
     fetchChargerDetails();
   }, [location.id]);
+
+  // Effect to fetch existing ratings from Supabase
+  useEffect(() => {
+    const fetchRatings = async () => {
+      if (!location.id) return;
+      setIsLoadingRatings(true);
+      try {
+        const { data, error } = await supabase
+          .from('location_ratings')
+          .select('*') // Select all columns for now
+          .eq('location_id', location.id)
+          .order('created_at', { ascending: false }); // Show newest first
+
+        if (error) {
+          throw error;
+        }
+        setExistingRatings(data || []);
+      } catch (error) {
+        console.error('Error fetching existing ratings:', error);
+        setExistingRatings([]); // Set empty on error
+      } finally {
+        setIsLoadingRatings(false);
+      }
+    };
+
+    fetchRatings();
+  }, [location.id]); // Re-fetch if location changes
 
 
   // Removed useEffect that set currentUserHasSubmittedWifi
@@ -863,6 +914,45 @@ export default function LocationDetails({ location, isFavorite, onToggleFavorite
                 )}
               </div>
              )}
+          </div>
+
+          {/* Existing Ratings Display Section */}
+          <div className="mt-6 border-t pt-4">
+            <h4 className="text-md font-semibold mb-3">User Ratings</h4>
+            {isLoadingRatings ? (
+              <p className="text-sm text-gray-500">Loading ratings...</p>
+            ) : existingRatings.length > 0 ? (
+              <div className="space-y-4 max-h-48 overflow-y-auto pr-2"> {/* Added max height and scroll */}
+                {existingRatings.map((rating) => (
+                  <div key={rating.id} className="p-3 bg-gray-50 rounded border text-sm">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs text-gray-500">
+                        {new Date(rating.created_at).toLocaleDateString()}
+                      </span>
+                      {/* Optionally display user info if available/needed */}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1">
+                        <Coffee size={14} className="text-gray-600" />
+                        {renderStars(rating.coffee_rating)}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Wifi size={14} className="text-gray-600" />
+                        {renderStars(rating.wifi_rating)}
+                      </div>
+                      {rating.staff_rating !== null && ( // Only show staff if rated
+                        <div className="flex items-center gap-1">
+                          <User size={14} className="text-gray-600" />
+                          {renderStars(rating.staff_rating)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No ratings submitted yet.</p>
+            )}
           </div>
 
 
