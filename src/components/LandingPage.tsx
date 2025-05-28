@@ -3,9 +3,12 @@ import type { Session } from '@supabase/supabase-js';
 
 // Define the example query hints specifically for the landing page
 const landingQueryHints = [
-  "Cafés with power outlets near Taipei 101",
-  "Stable Wi-Fi cafés Taichung",
-  "Coffee shops open now",
+  "Work-friendly cafés with WiFi in Manhattan",
+  "Quiet coffee shops with power outlets near me",
+  "Coffee shops open now with good WiFi",
+  "Affordable cafés for studying in Brooklyn",
+  "Coffee shops with outdoor seating and charging",
+  "24-hour coffee shops for late night work",
 ];
 
 interface LandingPageProps {
@@ -65,8 +68,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
           <span className="text-5xl font-bold text-indigo-600">Coffeelover</span> {/* Simple text logo */}
         </div>
 
-        <h1 className="text-4xl sm:text-5xl font-bold mb-3 text-gray-800">Find Your Next Coffee Stop</h1>
-        <p className="text-lg sm:text-xl text-gray-600 mb-10">Discover cafes with the perfect vibe, Wi-Fi, and more.</p>
+        <h1 className="text-4xl sm:text-5xl font-bold mb-3 text-gray-800">Find Your Perfect Work Café</h1>
+        <p className="text-lg sm:text-xl text-gray-600 mb-10">Discover work-friendly coffee shops with reliable Wi-Fi, power outlets, and the perfect vibe for productivity.</p>
 
         {/* Landing Search Form */}
         <form onSubmit={handleLandingSearchSubmit} className="w-full max-w-2xl mx-auto mb-4">
@@ -89,7 +92,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               type="text"
               value={landingPrompt}
               onChange={(e) => setLandingPrompt(e.target.value)}
-              placeholder="Search cafes by name, location, features..."
+              placeholder="Find work-friendly cafés with WiFi, power outlets, quiet spaces..."
               className="flex-grow p-3 text-lg focus:outline-none w-full rounded-full"
               disabled={isLoading}
             />

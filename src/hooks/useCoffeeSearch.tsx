@@ -349,6 +349,51 @@ const renderClosableToast = (message: string, toastInstance: Toast, type: 'succe
   </div>
 );
 
+// --- Helper function to validate and normalize location terms ---
+const normalizeLocationTerm = (locationTerm: string | null): string | null => {
+  if (!locationTerm || locationTerm === "near me") {
+    return locationTerm;
+  }
+  
+  // Common geographic locations that might be confused with business names
+  const knownLocations = [
+    // US Cities
+    "new york", "nyc", "manhattan", "brooklyn", "queens", "bronx", "staten island",
+    "los angeles", "la", "san francisco", "sf", "chicago", "houston", "phoenix",
+    "philadelphia", "san antonio", "san diego", "dallas", "san jose", "austin",
+    "seattle", "denver", "washington dc", "boston", "miami", "atlanta",
+    
+    // International Cities
+    "london", "paris", "tokyo", "seoul", "beijing", "shanghai", "hong kong",
+    "singapore", "sydney", "melbourne", "toronto", "vancouver", "montreal",
+    
+    // Taiwan Cities/Districts
+    "taipei", "台北", "taichung", "台中", "tainan", "台南", "kaohsiung", "高雄",
+    "xinyi", "信義區", "daan", "大安區", "zhongshan", "中山區", "songshan", "松山區"
+  ];
+  
+  const normalized = locationTerm.toLowerCase().trim();
+  
+  // Check if it's a known geographic location
+  if (knownLocations.some(loc => normalized.includes(loc) || loc.includes(normalized))) {
+    return locationTerm; // Keep as is if it's a known location
+  }
+  
+  // If it contains common business name patterns, be more cautious
+  const businessPatterns = [
+    "coffee", "café", "cafe", "roasters", "brewing", "espresso", "beans",
+    "starbucks", "dunkin", "peet's", "blue bottle", "intelligentsia"
+  ];
+  
+  if (businessPatterns.some(pattern => normalized.includes(pattern))) {
+    console.warn(`Location term "${locationTerm}" might be a business name, treating as generic search`);
+    return "near me"; // Fallback to location-based search
+  }
+  
+  return locationTerm; // Return as is if it passes validation
+};
+
+// --- End Helper Function ---
 
 export function useCoffeeSearch(
   userLocation: { lat: number; lng: number } | null,
@@ -400,15 +445,22 @@ export function useCoffeeSearch(
       // Use the proxy path defined in vite.config.ts or netlify.toml
       let searchApiUrl = `/maps-api/place/textsearch/json?query=${encodeURIComponent(keyword)}&type=cafe`;
 
-      // Only add location bias if the keyword isn't a specific place/city identified by the AI
-      // or if the user explicitly asked for "near me".
+      // Location bias strategy:
+      // 1. If location_term is a specific place (not "near me"), rely on text search without coordinate bias
+      // 2. If location_term is "near me" or null, use coordinate bias for local search
+      // 3. Add radius only for coordinate-based searches
       if (!aiFilters?.location_term || aiFilters.location_term === "near me") {
+        // Use coordinate-based search with location bias
         searchApiUrl += `&location=${lat},${lng}`;
-        // Optionally add radius if not searching for a specific named location
-        // searchApiUrl += `&radius=50000`; // Example: 50km radius if using location bias
+        
+        // Add radius for coordinate-based searches
+        const searchRadius = aiFilters?.distanceKm ? aiFilters.distanceKm * 1000 : 10000; // Default 10km
+        searchApiUrl += `&radius=${searchRadius}`;
+      } else {
+        // For specific named locations, let Google's text search handle the location
+        // Don't add coordinate bias as it might conflict with the text-based location
+        console.log(`Using text-based location search for: ${aiFilters.location_term}`);
       }
-      // If location_term is a specific city/place, we omit the lat/lng bias
-      // to let Google prioritize the text query for that location.
 
       try {
         const response = await fetch(searchApiUrl);
@@ -501,7 +553,7 @@ export function useCoffeeSearch(
 
           if (fallbackRatingFiltered.length > 0) {
             finalShopsToDisplay = fallbackRatingFiltered;
-            fallbackMessage = "I couldn’t find an exact match for shops open right now, but based on nearby coffee shops, here are a few recommendations you might like:";
+            fallbackMessage = "I couldn't find an exact match for shops open right now, but based on nearby coffee shops, here are a few recommendations you might like:";
             toast.success((t) => renderClosableToast(fallbackMessage!, t), { id: internalLoadingToastId });
           } else {
             // No fallback results either
@@ -556,15 +608,21 @@ User Request: "${prompt}"
 Current Location Context (Optional, provide if available): ${userLocation ? `{ "latitude": ${userLocation.lat}, "longitude": ${userLocation.lng} }` : null}
 
 Available Filter Criteria & Mapping:
-- Location: City name (e.g., "Taipei", "Tainan", "台中"), district (e.g., "信義區"), or general area ("near me"). Extract the most specific location mentioned as \`location_term\`. Prioritize city/district names over vague terms if both are present.
+- Location: Extract GEOGRAPHIC locations only (cities, districts, neighborhoods, states, countries). Examples: "New York" (city), "Manhattan" (district), "Brooklyn" (borough), "台北" (city), "信義區" (district). 
+  IMPORTANT: Distinguish between geographic locations and business names. "Budapest New York Coffee" contains "New York" as part of a business name, NOT as a geographic location.
+  If the user mentions "New York" in context of finding coffee shops, treat it as New York City, USA unless context suggests otherwise.
+  Extract as \`location_term\`. If no specific location mentioned, use "near me".
 - Time Limit: "不限時" (no time limit). Map to \`no_time_limit: true\`.
-- Wi-Fi: "WiFi 快", "有 WiFi". Map to \`wifi_required: true\`. If speed mentioned (e.g., "快", "穩定"), map to \`wifi_quality_min: 4\` (assuming a 1-5 scale later).
-- Power Outlets: "有插座", "charging". Map to \`power_outlets_required: true\`.
-- Price: "便宜", "cheap", "budget". Map to \`price_tier: 'cheap'\`. "中價位" -> \`price_tier: 'mid'\`. "高檔" -> \`price_tier: 'high'\`.
-- Vibe/Atmosphere: "安靜", "quiet", "適合工作". Map to \`vibe: 'quiet'\`. "適合聊天", "lively" -> \`vibe: 'social'\`. "一個人" -> \`vibe: 'solo'\`. "有桌燈" -> \`amenities: ['desk_lamp']\` (example of specific amenity tag).
-- Coffee Quality: "咖啡好喝", "good coffee". Map to \`coffee_quality_min: 4\`.
-- Specific Items: "latte", "croissant". Map to \`menu_items: ["latte", "croissant"]\`.
-- Result Count: "5家", "a few". Extract as \`limit: 5\` or a reasonable default like 10.
+- Wi-Fi: "WiFi 快", "有 WiFi", "fast wifi", "stable wifi". Map to \`wifi_required: true\`. If speed mentioned (e.g., "快", "穩定", "fast"), map to \`wifi_quality_min: 4\` (assuming a 1-5 scale).
+- Power Outlets: "有插座", "charging", "power outlets", "plugs". Map to \`power_outlets_required: true\`.
+- Price: "便宜", "cheap", "budget", "affordable". Map to \`price_tier: 'cheap'\`. "中價位", "moderate" -> \`price_tier: 'mid'\`. "高檔", "expensive", "upscale" -> \`price_tier: 'high'\`.
+- Vibe/Atmosphere: "安靜", "quiet", "適合工作", "work-friendly", "study" -> \`vibe: 'quiet'\`. "適合聊天", "lively", "social", "good vibe", "aesthetic" -> \`vibe: 'social'\`. "一個人", "solo", "alone" -> \`vibe: 'solo'\`. 
+- Amenities: "有桌燈", "desk lamp" -> \`amenities: ['desk_lamp']\`. "outdoor seating" -> \`amenities: ['outdoor']\`.
+- Coffee Quality: "咖啡好喝", "good coffee", "quality coffee", "specialty coffee". Map to \`coffee_quality_min: 4\`.
+- Specific Items: "latte", "croissant", "pastries", "food". Map to \`menu_items: ["latte", "croissant"]\`.
+- Result Count: "5家", "a few", "top 5". Extract as \`limit: 5\` or reasonable default.
+- Distance: "nearby", "close", "within 1km", "walking distance" -> \`distanceKm: 1\`. "far", "anywhere" -> larger radius or null.
+- Open Now: "open now", "currently open", "營業中" -> \`openNow: true\`.
 
 Output Format (JSON Object ONLY):
 {
@@ -579,17 +637,21 @@ Output Format (JSON Object ONLY):
     "vibe": "quiet" | "social" | "solo" | null,
     "amenities": string[] | null,
     "coffee_quality_min": number | null,
-    "menu_items": string[] | null
+    "menu_items": string[] | null,
+    "distanceKm": number | null,
+    "openNow": boolean | null,
+    "minRating": number | null
   } | null,
   "limit": number | null,
-  "explanation": string | null // For clarification or unrelated messages
+  "explanation": string | null
 }
 
 Instructions:
 - If the query is unrelated to finding coffee shops, set \`query_type\` to "unrelated", \`filters\` to null, and provide an explanation.
 - If the query is ambiguous and needs clarification, set \`query_type\` to "clarification_needed", \`filters\` to null, and provide the clarification question in \`explanation\`.
 - If a criterion is not mentioned, set its corresponding filter value to \`null\`.
-- If a city/district is mentioned (e.g., "Find cafes in Taipei"), extract it as \`location_term\` (e.g., "Taipei").
+- For location parsing, be very careful to distinguish between geographic locations and business names.
+- If a city/district is mentioned (e.g., "Find cafes in New York"), extract it as \`location_term\` (e.g., "New York").
 - If only "near me" or no location is mentioned, set \`location_term\` to "near me" and rely on the provided latitude/longitude.
 - Be strict with the JSON format. Only output the JSON object.`;
       // --- End of Enhanced Prompt Template ---
@@ -638,11 +700,16 @@ Instructions:
       // --- Handle different query types ---
       if (parsedResponse.query_type === "find_cafe" && parsedResponse.filters) {
         const { filters, limit } = parsedResponse;
+        
+        // Normalize and validate the location term
+        const normalizedLocationTerm = normalizeLocationTerm(filters.location_term || null);
+        const normalizedFilters = { ...filters, location_term: normalizedLocationTerm };
+        
         // Construct a descriptive search message based on filters
         let searchMessage = "Searching for coffee shops";
-        if (filters.location_term && filters.location_term !== "near me") {
-           searchMessage += ` in ${filters.location_term}`;
-        } else if (filters.location_term === "near me") {
+        if (normalizedLocationTerm && normalizedLocationTerm !== "near me") {
+           searchMessage += ` in ${normalizedLocationTerm}`;
+        } else if (normalizedLocationTerm === "near me") {
            searchMessage += " near you";
         }
         // Add more filter descriptions to the message if desired...
@@ -650,25 +717,46 @@ Instructions:
 
         // Call the internal keyword search logic, passing the structured filters
         // Refine keyword for Google Places search if needed
-        let googleSearchKeyword = filters.location_term || "coffee shop"; // Default
-        // If filters indicate amenities but location_term is generic or missing, add context
-        if ((filters.wifi_required || filters.power_outlets_required || filters.menu_items?.length) && (!filters.location_term || ["wifi", "outlet", "charging", "power", "sockets"].includes(filters.location_term.toLowerCase()))) {
-            googleSearchKeyword = `coffee shop ${filters.location_term || ''}`.trim(); // Append "coffee shop"
+        let googleSearchKeyword = "coffee shop"; // Start with base term
+        
+        // Handle location-specific search
+        if (normalizedLocationTerm && normalizedLocationTerm !== "near me") {
+          // For specific locations, construct a more targeted search
+          googleSearchKeyword = `coffee shop in ${normalizedLocationTerm}`;
+        } else {
+          // For "near me" or no location, use generic term with location bias
+          googleSearchKeyword = "coffee shop";
+        }
+        
+        // Add vibe/atmosphere context to search if specified
+        if (normalizedFilters.vibe === "quiet" || normalizedFilters.vibe === "solo") {
+          googleSearchKeyword += " quiet study work";
+        } else if (normalizedFilters.vibe === "social") {
+          googleSearchKeyword += " social trendy";
+        }
+        
+        // Add amenity context if specified
+        if (normalizedFilters.wifi_required) {
+          googleSearchKeyword += " wifi";
+        }
+        if (normalizedFilters.power_outlets_required) {
+          googleSearchKeyword += " power outlets charging";
         }
 
         // Pass the potentially refined keyword and structured filters
         await handleKeywordSearchInternal(
             googleSearchKeyword,
             limit, // Pass the limit extracted by AI
-            filters, // Pass the full filters object for detailed filtering
+            normalizedFilters, // Pass the normalized filters object for detailed filtering
             loadingToastId
         );
         triggerViewSwitch(); // Call the callback to switch view in App.tsx
 
         // Show social vibe toast if applicable *after* results are set
-        if (filters?.socialVibe === true && searchResults.length > 0) {
-           toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t));
-        }
+        // Note: This toast will be shown in a separate effect or after state update
+        // if (filters?.socialVibe === true && searchResults.length > 0) {
+        //    toast.success((t) => renderClosableToast("These cafés are known for their aesthetic vibe and social crowd — perfect if you're looking to enjoy a drink in a lively, stylish atmosphere 😎", t));
+        // }
 
       } else if (parsedResponse.query_type === "clarification_needed") {
          toast.error((t) => renderClosableToast(`AI needs clarification: ${parsedResponse.explanation || 'Please refine your search.'}`, t, 'error'), { id: loadingToastId, duration: 6000 });

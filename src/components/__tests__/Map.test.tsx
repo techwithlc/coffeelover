@@ -8,7 +8,7 @@ vi.mock('@react-google-maps/api', () => ({
   GoogleMap: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="map">{children}</div>
   ),
-  MarkerClusterer: ({ children }: { children: (clusterer: any) => React.ReactNode }) => (
+  MarkerClusterer: ({ children }: { children: (clusterer: unknown) => React.ReactNode }) => (
     <div data-testid="clusterer">{children({})}</div>
   ),
   Marker: () => <div data-testid="marker" />,
